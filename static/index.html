@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>暑假课表系统</title>
+  <!-- FullCalendar -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a; --bg2: #1e293b; --bg3: #334155;
+      --text: #e2e8f0; --text2: #94a3b8; --text3: #475569;
+      --accent: #3b82f6; --accent2: #60a5fa;
+      --success: #10b981; --warn: #f59e0b; --danger: #ef4444;
+      --radius: 10px; --sidebar: 200px;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, 'PingFang SC', sans-serif; margin: 0; }
+    #app { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
+
+    /* Sidebar */
+    #sidebar {
+      width: var(--sidebar); background: var(--bg2); border-right: 1px solid var(--bg3);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    #sidebar h1 { padding: 20px 16px 12px; font-size: 15px; font-weight: 700; color: var(--text); border-bottom: 1px solid var(--bg3); }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+      cursor: pointer; font-size: 14px; color: var(--text2); transition: background .15s;
+    }
+    .nav-item:hover { background: var(--bg3); color: var(--text); }
+    .nav-item.active { background: #1e3a5f; color: var(--accent2); font-weight: 600; border-right: 2px solid var(--accent); }
+    .nav-item .icon { font-size: 18px; width: 22px; text-align: center; }
+    .nav-item .badge { margin-left: auto; background: var(--danger); color: white; border-radius: 10px; font-size: 11px; padding: 1px 6px; }
+    #sidebar-footer { margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--bg3); }
+    .device-status { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+    .dot.off { background: var(--text3); }
+
+    /* Main content */
+    #main { flex: 1; overflow: auto; display: flex; flex-direction: column; }
+
+    /* Toast notifications */
+    #toasts { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--bg2); border: 1px solid var(--bg3); border-radius: var(--radius);
+      padding: 12px 16px; max-width: 320px; font-size: 13px; box-shadow: 0 4px 16px #0008;
+      animation: slideIn .2s ease;
+    }
+    .toast.success { border-color: var(--success); }
+    .toast.warn { border-color: var(--warn); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Buttons */
+    .btn { padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity .15s; }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-success { background: var(--success); color: white; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-ghost { background: var(--bg3); color: var(--text2); }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: #000a; display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal { background: var(--bg2); border: 1px solid var(--bg3); border-radius: 14px; padding: 24px; width: 440px; max-width: 95vw; }
+    .modal h3 { font-size: 16px; margin-bottom: 18px; }
+    .form-row { margin-bottom: 14px; }
+    .form-row label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
+    .form-row input, .form-row select, .form-row textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--bg3); border-radius: 7px;
+      color: var(--text); padding: 8px 10px; font-size: 14px; outline: none;
+    }
+    .form-row input:focus, .form-row select:focus { border-color: var(--accent); }
+    .form-row .row2 { display: flex; gap: 8px; }
+    .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+    /* Cards */
+    .card { background: var(--bg2); border: 1px solid var(--bg3); border-radius: var(--radius); padding: 16px; }
+
+    /* Page layout */
+    .page { padding: 24px; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: auto; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-shrink: 0; }
+    .page-title { font-size: 20px; font-weight: 700; }
+
+    /* FullCalendar overrides */
+    .fc { --fc-bg-event-opacity: 1; }
+    .fc-theme-standard td, .fc-theme-standard th { border-color: var(--bg3) !important; }
+    .fc-theme-standard .fc-scrollgrid { border-color: var(--bg3) !important; }
+    .fc .fc-col-header-cell-cushion { color: var(--text2); font-size: 13px; }
+    .fc .fc-timegrid-slot-label-cushion { color: var(--text3); font-size: 12px; }
+    .fc .fc-daygrid-day-number { color: var(--text2); }
+    .fc-day-today { background: #1e3a5f22 !important; }
+    .fc .fc-button { background: var(--bg3); border: 1px solid var(--bg3); color: var(--text); font-size: 13px; }
+    .fc .fc-button:hover { background: var(--accent); }
+    .fc .fc-button-primary:not(:disabled).fc-button-active { background: var(--accent); border-color: var(--accent); }
+    .fc-event { border-radius: 5px !important; border: none !important; font-size: 12px; }
+    .fc-event-title { font-weight: 600; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h1>暑假课表</h1>
+    <div class="nav-item" :class="{active: page==='calendar'}" @click="page='calendar'">
+      <span class="icon">📅</span> 课表
+    </div>
+    <div class="nav-item" :class="{active: page==='leaderboard'}" @click="page='leaderboard'">
+      <span class="icon">🏆</span> 积分榜
+    </div>
+    <div class="nav-item" :class="{active: page==='stats'}" @click="page='stats'">
+      <span class="icon">📊</span> 统计
+    </div>
+    <div class="nav-item" :class="{active: page==='redemption'}" @click="page='redemption'; loadRedemptions()">
+      <span class="icon">🎁</span> 兑换
+      <span class="badge" v-if="pendingCount>0">{{pendingCount}}</span>
+    </div>
+    <div class="nav-item" :class="{active: page==='settings'}" @click="page='settings'">
+      <span class="icon">⚙️</span> 设置
+    </div>
+    <div id="sidebar-footer">
+      <div class="device-status">
+        <div class="dot" :class="{off: !xiaomiConnected}"></div>
+        {{ xiaomiConnected ? '小爱已连接' : (xiaomiConfigured ? '小爱未登录' : '小爱未配置') }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <calendar-page v-if="page==='calendar'" :children="children" @toast="showToast"></calendar-page>
+    <leaderboard-page v-else-if="page==='leaderboard'" :children="children" @reload-children="loadChildren" @toast="showToast"></leaderboard-page>
+    <stats-page v-else-if="page==='stats'" :children="children"></stats-page>
+    <redemption-page v-else-if="page==='redemption'" :children="children" @pending-count="pendingCount=$event" @toast="showToast"></redemption-page>
+    <settings-page v-else-if="page==='settings'" :children="children" @reload-children="loadChildren" @toast="showToast" @xiaomi-status-changed="checkXiaomiStatus"></settings-page>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toasts">
+    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{t.msg}}</div>
+  </div>
+</div>
+
+<script src="/static/components/Calendar.js"></script>
+<script src="/static/components/Leaderboard.js"></script>
+<script src="/static/components/Stats.js"></script>
+<script src="/static/components/Redemption.js"></script>
+<script src="/static/components/Settings.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
