@@ -150,15 +150,19 @@ class XiaomiClient:
             return None
 
     async def test_connection(self, device_id: str) -> dict:
-        """Test connectivity — returns status dict."""
+        """Test connectivity — returns status dict with suggested devices on mismatch."""
         if not self._mina:
-            return {"ok": False, "error": "未登录"}
+            return {"ok": False, "error": "未登录，请先保存并登录"}
         devices = await self.get_device_list()
         matched = [d for d in devices if d.get("deviceID") == device_id]
-        if not matched:
-            ids = [d.get("deviceID") for d in devices]
-            return {"ok": False, "error": f"未找到设备 {device_id}，账号下设备：{ids}"}
-        return {"ok": True, "device": matched[0]}
+        if matched:
+            return {"ok": True, "device": matched[0]}
+        ids = [{"deviceID": d.get("deviceID", ""), "name": d.get("name", "")} for d in devices]
+        return {
+            "ok": False,
+            "error": f"未找到设备 {device_id}",
+            "suggested_devices": ids,
+        }
 
     async def close(self):
         if self._session and not self._session.closed:

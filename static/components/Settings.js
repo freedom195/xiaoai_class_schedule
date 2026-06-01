@@ -31,7 +31,20 @@ const SettingsPage = {
     </div>
     <div v-if="xiaomi.testResult" style="margin-top:8px;font-size:12px"
       :style="{color: xiaomi.testResult.ok ? 'var(--success)' : 'var(--danger)'}">
-      {{ xiaomi.testResult.ok ? '✓ ' + xiaomi.testResult.device?.name : '✗ ' + xiaomi.testResult.error }}
+      <template v-if="xiaomi.testResult.ok">
+        ✓ {{ xiaomi.testResult.device?.name }}
+      </template>
+      <template v-else>
+        ✗ {{ xiaomi.testResult.error }}
+        <div v-if="xiaomi.testResult.suggested_devices?.length" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">
+          <span v-for="d in xiaomi.testResult.suggested_devices"
+            :key="d.deviceID" class="device-suggestion"
+            @click="applyDeviceId(d.deviceID)"
+            title="点击使用此设备">
+            {{ d.name || d.deviceID }}
+          </span>
+        </div>
+      </template>
     </div>
   </div>
 
@@ -102,6 +115,11 @@ const SettingsPage = {
       xiaomi.value.testing = false;
     }
 
+    function applyDeviceId(deviceId) {
+      xiaomi.value.device_id = deviceId;
+      emit('toast', '已替换设备ID，请点击"保存并登录"应用');
+    }
+
     async function addChild() {
       if (!newChild.value.name.trim()) return;
       await fetch('/api/children', {
@@ -133,8 +151,17 @@ const SettingsPage = {
       emit('toast', '已删除', 'warn');
     }
 
-    onMounted(initChildren);
+    async function loadXiaomiConfig() {
+      const res = await fetch('/api/config/xiaomi');
+      if (res.ok) {
+        const data = await res.json();
+        xiaomi.value.account = data.account || '';
+        xiaomi.value.device_id = data.device_id || '';
+      }
+    }
 
-    return { xiaomi, newChild, advanceMin, saveXiaomi, testXiaomi, addChild, updateChild, deleteChild, isDirty };
+    onMounted(() => { initChildren(); loadXiaomiConfig(); });
+
+    return { xiaomi, newChild, advanceMin, saveXiaomi, testXiaomi, addChild, updateChild, deleteChild, isDirty, applyDeviceId };
   }
 };

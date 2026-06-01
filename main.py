@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from database import init_db, get_session, get_config, set_config
+from config import decrypt
 from xiaomi_client import xiaomi_client
 from scheduler import scheduler_loop
 from voice_poller import voice_poller_loop
@@ -89,7 +90,15 @@ async def xiaomi_status(session: Session = Depends(get_session)):
     account = get_config(session, "mi_account") or ""
     configured = bool(device_id and account)
     logged_in = xiaomi_client._mina is not None
-    return {"configured": configured, "connected": logged_in, "device_id": device_id}
+    return {"configured": configured, "connected": logged_in, "account": account, "device_id": device_id}
+
+
+@app.get("/api/config/xiaomi")
+async def get_xiaomi_config(session: Session = Depends(get_session)):
+    """Return saved Xiaomi config for form pre-fill (password omitted for security)."""
+    account_enc = get_config(session, "mi_account")
+    account = decrypt(account_enc) if account_enc else ""
+    return {"account": account, "device_id": get_config(session, "mi_device_id") or ""}
 
 
 # ---------- WebSocket ----------
