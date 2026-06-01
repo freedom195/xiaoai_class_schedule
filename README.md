@@ -238,4 +238,75 @@ xiaoai_class_schedule/
 
 ## 数据备份
 
-所有数据存储在 `class_schedule.db`，定期复制该文件即可完整备份。
+**直接运行：** 所有数据存储在 `class_schedule.db`，定期复制该文件即可完整备份。
+
+**Docker 运行：** 数据在 `./data/` 目录下，备份整个 `data/` 文件夹即可。
+
+---
+
+## Docker 部署
+
+### 快速启动
+
+```bash
+# 构建并启动（后台运行）
+docker compose up -d --build
+
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+```
+
+启动后访问 **http://localhost:8080**。
+
+### 数据持久化
+
+运行时会自动创建 `./data/` 目录，数据库和小米认证文件均存放在此：
+
+```
+data/
+├── class_schedule.db   # 数据库
+└── .mi.token           # 小米登录 token（登录后自动生成）
+```
+
+> 升级镜像时保留 `data/` 目录，数据不会丢失。
+
+### 修改端口
+
+编辑 `docker-compose.yml`，将 `"8080:8080"` 改为 `"你的端口:8080"`：
+
+```yaml
+ports:
+  - "9090:8080"   # 改为 9090
+```
+
+### 设置加密密钥（可选但推荐）
+
+默认用机器特征派生加密密钥。在 Docker 环境中建议显式设置：
+
+```yaml
+environment:
+  - DATA_DIR=/app/data
+  - APP_SECRET=your-strong-random-secret   # 添加此行
+```
+
+> 注意：更改 `APP_SECRET` 后已保存的小米密码需要重新填写。
+
+### 手动构建镜像
+
+```bash
+# 构建
+docker build -t xiaoai-schedule .
+
+# 运行
+docker run -d \
+  --name xiaoai-schedule \
+  -p 8080:8080 \
+  -v $(pwd)/data:/app/data \
+  -e DATA_DIR=/app/data \
+  --restart unless-stopped \
+  xiaoai-schedule
+```
+

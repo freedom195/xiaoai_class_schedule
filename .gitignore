@@ -27,3 +27,6 @@ auth.json
 .idea/
 *.swp
 *.swo
+
+# Docker 运行时数据目录
+data/

@@ -20,7 +20,9 @@ from database import Session, get_config, set_config
 
 logger = logging.getLogger(__name__)
 
-TOKEN_FILE = Path(".mi.token")
+from database import DATA_DIR
+
+TOKEN_FILE = DATA_DIR / ".mi.token"
 LATEST_ASK_API = (
     "https://userprofile.mina.mi.com/device_profile/v2/conversation"
     "?source=dialogu&hardware={hardware}&timestamp={timestamp}&limit=3"

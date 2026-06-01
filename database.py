@@ -1,10 +1,16 @@
 from __future__ import annotations
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 import json
+import os
 
-DATABASE_URL = "sqlite:///./class_schedule.db"
+# DATA_DIR: 存放数据库和认证文件的目录，Docker 挂载时指向 volume
+DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DATABASE_URL = f"sqlite:///{DATA_DIR / 'class_schedule.db'}"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 

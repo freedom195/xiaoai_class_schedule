@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    container_name: xiaoai-schedule
+    ports:
+      - "8080:8080"
+    volumes:
+      # 持久化存储：数据库、小米 token、认证文件
+      - ./data:/app/data
+    environment:
+      - DATA_DIR=/app/data
+      # 可选：覆盖加密密钥（建议在生产环境设置）
+      # - APP_SECRET=your-custom-secret-here
+    restart: unless-stopped

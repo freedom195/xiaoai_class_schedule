@@ -1,0 +1,31 @@
+# 数据文件（不打进镜像，运行时挂载）
+data/
+*.db
+*.db-shm
+*.db-wal
+auth.json
+.mi.token
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 开发工具
+.superpowers/
+.vscode/
+.idea/
+*.png
+1111.png
+
+# Git
+.git/
+.gitignore
+
+# 文档
+docs/
+README.md
+
+# Docker 自身
+Dockerfile
+docker-compose.yml
+.dockerignore
