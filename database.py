@@ -36,6 +36,9 @@ class ScheduleItem(SQLModel, table=True):
     xp_reward: int = 10
     keywords: str = "[]"              # JSON array stored as text
     notes: str = ""
+    voice_modified: bool = False     # True if title was changed via voice command
+    original_title: str = ""         # Previous title before voice modification
+    cancelled_dates: str = "[]"       # JSON array of date strings (YYYY-MM-DD) that are cancelled
     recurrence_type: str = "none"     # none | daily | weekly
     recurrence_days: str = "[]"       # JSON array of weekday ints (0=Mon..6=Sun), weekly only
 
@@ -47,6 +50,15 @@ class ScheduleItem(SQLModel, table=True):
 
     def get_recurrence_days(self) -> List[int]:
         return json.loads(self.recurrence_days)
+
+    def get_cancelled_dates(self) -> List[str]:
+        return json.loads(self.cancelled_dates)
+
+    def cancel_date(self, date_str: str):
+        dates = self.get_cancelled_dates()
+        if date_str not in dates:
+            dates.append(date_str)
+        self.cancelled_dates = json.dumps(dates)
 
 
 class Completion(SQLModel, table=True):

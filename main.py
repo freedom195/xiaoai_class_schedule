@@ -68,7 +68,10 @@ class XiaomiConfig(BaseModel):
 async def save_xiaomi_config(body: XiaomiConfig, session: Session = Depends(get_session)):
     await xiaomi_client.save_to_db(session, body.account, body.password)
     set_config(session, "mi_device_id", body.device_id)
-    ok = await xiaomi_client.login(body.account, body.password)
+    # force_reauth=True: clear cached token so the password is actually validated
+    # against Xiaomi servers, preventing a stale token from making a wrong password
+    # appear successful.
+    ok = await xiaomi_client.login(body.account, body.password, force_reauth=True)
     if ok:
         # Restart background tasks with new config
         asyncio.create_task(scheduler_loop(body.device_id))

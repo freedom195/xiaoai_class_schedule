@@ -62,6 +62,8 @@
     .btn-primary { background: var(--accent); color: white; }
     .btn-success { background: var(--success); color: white; }
     .btn-danger { background: var(--danger); color: white; }
+    .btn-danger-outline { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-danger-outline:hover { background: var(--danger); color: white; }
     .btn-ghost { background: var(--bg3); color: var(--text2); }
 
     /* Device suggestions */
@@ -107,6 +109,22 @@
     .fc .fc-button-primary:not(:disabled).fc-button-active { background: var(--accent); border-color: var(--accent); }
     .fc-event { border-radius: 5px !important; border: none !important; font-size: 12px; }
     .fc-event-title { font-weight: 600; }
+    .voice-modified-event {
+      border-left: 3px dashed #fbbf24 !important;
+      position: relative;
+    }
+    .voice-modified-event::after {
+      content: '已修改';
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      font-size: 9px;
+      background: #fbbf2433;
+      color: #fbbf24;
+      padding: 0 4px;
+      border-radius: 3px;
+      font-weight: 400;
+    }
   </style>
 </head>
 <body>

@@ -1,9 +1,10 @@
 const TASK_TYPES = [
-  { value: 'study',        label: '学习',    color: '#3b82f6', emoji: '📖' },
-  { value: 'exercise',     label: '运动',    color: '#10b981', emoji: '🏃' },
-  { value: 'rest',         label: '休息',    color: '#64748b', emoji: '😴' },
-  { value: 'eye_exercise', label: '眼保健操', color: '#0ea5e9', emoji: '👁️' },
-  { value: 'custom',       label: '其他',    color: '#8b5cf6', emoji: '✨' },
+  { value: 'study',        label: '学习',    color: '#3b82f6', emoji: '📖', defaultPoints: 10 },
+  { value: 'screen',       label: '电子产品', color: '#f97316', emoji: '📱', defaultPoints: 10 },
+  { value: 'exercise',     label: '运动',    color: '#10b981', emoji: '🏃', defaultPoints: 20 },
+  { value: 'rest',         label: '休息',    color: '#64748b', emoji: '😴', defaultPoints: 0 },
+  { value: 'eye_exercise', label: '眼保健操', color: '#0ea5e9', emoji: '👁️', defaultPoints: 10 },
+  { value: 'custom',       label: '其他',    color: '#8b5cf6', emoji: '✨', defaultPoints: 10 },
 ];
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -59,11 +60,12 @@ const CalendarPage = {
         <input v-model="modal.title" placeholder="例：数学练习" @input="autoKeywords">
       </div>
       <div class="form-row">
-        <label>时间</label>
-        <div class="row2">
-          <input type="datetime-local" v-model="modal.start_time">
-          <input type="datetime-local" v-model="modal.end_time">
-        </div>
+        <label>开始时间</label>
+        <input type="datetime-local" v-model="modal.start_time">
+      </div>
+      <div class="form-row">
+        <label>时长（分钟）</label>
+        <input type="number" v-model.number="modal.duration" min="1" max="300" placeholder="例：30">
       </div>
 
       <!-- Recurrence -->
@@ -112,7 +114,16 @@ const CalendarPage = {
       </div>
       <div class="form-actions">
         <button class="btn btn-ghost" @click="modal.open=false">取消</button>
-        <button v-if="modal.id" class="btn btn-danger" @click="deleteItem">删除</button>
+        <button v-if="modal.id && !modal.completed && modal.for_date === todayStr()" class="btn btn-success" @click="completeItem">
+          ✓ 完成
+        </button>
+        <span v-if="modal.id && modal.completed && modal.for_date === todayStr()" style="color:var(--success);font-weight:600;font-size:13px;margin-right:8px">已完成 ✓</span>
+        <button v-if="modal.id" class="btn btn-danger-outline" @click="deleteItem(false)">
+          {{ modal.recurrence_type !== 'none' ? '删除本次' : '删除' }}
+        </button>
+        <button v-if="modal.id && modal.recurrence_type !== 'none'" class="btn btn-danger" @click="deleteItem(true)">
+          删除全部重复
+        </button>
         <button class="btn btn-primary" @click="saveItem">保存</button>
       </div>
     </div>
@@ -173,7 +184,7 @@ const CalendarPage = {
 
     const modal = ref({
       open: false, id: null, child_id: '', task_type: 'study',
-      title: '', start_time: '', end_time: '',
+      title: '', start_time: '', duration: 60, for_date: '', completed: false,
       color: '#3b82f6', points_reward: 10, keywords_str: '', notes: '',
       recurrence_type: 'none', recurrence_days: [],
     });
@@ -260,29 +271,45 @@ const CalendarPage = {
       else days.push(i);
     }
 
+    function addMinutes(dtStr, minutes) {
+      const d = new Date(dtStr);
+      d.setMinutes(d.getMinutes() + minutes);
+      return toLocalDT(d);
+    }
+
+    function getDurationMinutes(startStr, endStr) {
+      const s = new Date(startStr);
+      const e = new Date(endStr);
+      return Math.round((e - s) / 60000);
+    }
+
     function openCreate(start, end) {
       const now = new Date();
       const s = start ? toLocalDT(start) : toLocalDT(new Date(now.getTime() + 5*60000));
-      const e = end ? toLocalDT(end) : toLocalDT(new Date(now.getTime() + 65*60000));
+      const dur = (start && end) ? getDurationMinutes(toLocalDT(start), toLocalDT(end)) : 60;
       modal.value = {
         open: true, id: null,
         child_id: props.children[0]?.id || '',
         task_type: 'study', title: '',
-        start_time: s, end_time: e,
-        color: '#3b82f6', points_reward: 10, keywords_str: '', notes: '',
+        start_time: s, duration: dur,
+        color: '#3b82f6', points_reward: TASK_TYPES.find(t=>t.value==='study')?.defaultPoints ?? 10, keywords_str: '', notes: '',
         recurrence_type: 'none', recurrence_days: [],
       };
     }
 
     function openEdit(item) {
       const rd = item.extendedProps.recurrence_days || [];
+      const s = toLocalDT(item.start);
+      const e = toLocalDT(item.end || item.start);
       modal.value = {
         open: true, id: item.extendedProps.item_id,
         child_id: item.extendedProps.child_id,
         task_type: item.extendedProps.task_type || 'study',
-        title: item.title.replace(/ ↻$/, ''),
-        start_time: toLocalDT(item.start),
-        end_time: toLocalDT(item.end || item.start),
+        title: item.title.replace(/ ↻$/, '').replace(/ ✏️$/, ''),
+        start_time: s,
+        duration: getDurationMinutes(s, e),
+        for_date: item.extendedProps.completion_date || '',
+        completed: item.extendedProps.completed || false,
         color: item.backgroundColor || '#3b82f6',
         points_reward: item.extendedProps.points_reward,
         keywords_str: (item.extendedProps.keywords || []).join(' '),
@@ -308,7 +335,7 @@ const CalendarPage = {
       const items = await res.json();
       successCb(items.map(i => ({
         id: i.id + '-' + i.start_time.slice(0,10),
-        title: i.title + (i.completed ? ' ✓' : ''),
+        title: i.title + (i.completed ? ' ✓' : '') + (i.voice_modified ? ' ✏️' : ''),
         start: i.start_time,
         end: i.end_time,
         backgroundColor: i.color,
@@ -320,8 +347,13 @@ const CalendarPage = {
           recurrence_type: i.recurrence_type,
           recurrence_days: i.recurrence_days,
           completion_date: i.completion_date,
+          voice_modified: i.voice_modified || false,
+          original_title: i.original_title || '',
         },
-        classNames: i.completed ? ['completed-event'] : [],
+        classNames: [
+          ...(i.completed ? ['completed-event'] : []),
+          ...(i.voice_modified ? ['voice-modified-event'] : []),
+        ],
         opacity: i.completed ? 0.6 : 1,
       })));
     }
@@ -336,14 +368,16 @@ const CalendarPage = {
     async function saveItem(force = false) {
       const m = modal.value;
       if (!m.title.trim()) { alert('请填写任务名称'); return; }
-      if (m.start_time >= m.end_time) { alert('结束时间必须晚于开始时间'); return; }
+      if (!m.duration || m.duration <= 0) { alert('时长必须大于 0 分钟'); return; }
+
+      const end_time = addMinutes(m.start_time, m.duration);
 
       const body = {
         child_id: m.child_id,
         title: m.title,
         task_type: m.task_type,
         start_time: m.start_time,
-        end_time: m.end_time,
+        end_time: end_time,
         color: m.color,
         points_reward: m.points_reward,
         xp_reward: m.points_reward,
@@ -385,12 +419,48 @@ const CalendarPage = {
       }
     }
 
-    async function deleteItem() {
-      if (!confirm('删除此任务？重复任务将删除所有日期的实例。')) return;
-      await fetch(`/api/schedule/${modal.value.id}`, { method: 'DELETE' });
-      modal.value.open = false;
-      calendar?.refetchEvents();
-      emit('toast', '任务已删除', 'warn');
+    async function completeItem() {
+      const m = modal.value;
+      if (!confirm(`确认完成「${m.title}」？`)) return;
+      const resp = await fetch('/api/completions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          schedule_item_id: m.id,
+          child_id: m.child_id,
+          completion_date: m.for_date || undefined,
+        }),
+      });
+      if (resp.ok) {
+        m.completed = true;
+        calendar?.refetchEvents();
+        emit('toast', '课程已完成！', 'success');
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        emit('toast', err.detail || '操作失败', 'error');
+      }
+    }
+
+    async function deleteItem(deleteAll) {
+      const m = modal.value;
+      const label = deleteAll
+        ? '删除此重复任务的所有日期实例？'
+        : '删除本次课程？';
+      if (!confirm(label)) return;
+
+      let url = `/api/schedule/${m.id}`;
+      if (!deleteAll && m.for_date && m.recurrence_type !== 'none') {
+        url += `?date=${m.for_date}`;
+      }
+      const resp = await fetch(url, { method: 'DELETE' });
+      if (resp.ok) {
+        m.open = false;
+        calendar?.refetchEvents();
+        emit('toast', deleteAll ? '所有重复课程已删除' : '本次课程已删除', 'warn');
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        emit('toast', err.detail || '删除失败', 'error');
+      }
     }
 
     onMounted(() => {
@@ -405,6 +475,7 @@ const CalendarPage = {
         nowIndicator: true,
         editable: true,
         selectable: true,
+        slotEventOverlap: false,
         events: loadEvents,
         select: (info) => openCreate(info.start, info.end),
         eventClick: (info) => openEdit(info.event),
@@ -428,11 +499,18 @@ const CalendarPage = {
 
     watch(selectedChildId, () => calendar?.refetchEvents());
 
+    // Auto-fill default points when task type changes
+    watch(() => modal.value.task_type, (newType) => {
+      const t = TASK_TYPES.find(t => t.value === newType);
+      if (t) modal.value.points_reward = t.defaultPoints;
+    });
+
     return {
       selectedChildId, calView, modal, COLORS, TASK_TYPES, WEEKDAYS,
       clearModal, setQuickRange, confirmClear,
       openCreate, openEdit, autoKeywords, applyType, toggleWeekday,
-      saveItem, deleteItem, refreshCal,
+      saveItem, completeItem, deleteItem, refreshCal,
+      todayStr,
     };
   }
 };

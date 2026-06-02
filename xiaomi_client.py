@@ -41,9 +41,29 @@ class XiaomiClient:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
 
-    async def login(self, account: str, password: str) -> bool:
-        """Authenticate with Xiaomi account. Returns True on success."""
+    async def login(self, account: str, password: str, force_reauth: bool = False) -> bool:
+        """Authenticate with Xiaomi account. Returns True on success.
+
+        Args:
+            force_reauth: When True, delete the cached token file before login so that
+                          the password is always validated against the Xiaomi server.
+                          Pass True when the user explicitly saves new credentials so
+                          that a wrong password is correctly rejected even when an old
+                          valid token exists on disk.
+        """
         await self._ensure_session()
+
+        # When the caller wants real password validation, wipe any cached token first.
+        # miservice loads the token file in __init__ and skips password auth when the
+        # cached passToken is still valid — meaning a wrong password would appear to
+        # succeed if a previous successful login token exists on disk.
+        if force_reauth and TOKEN_FILE.exists():
+            try:
+                TOKEN_FILE.unlink()
+                logger.info("Cleared cached Xiaomi token for re-authentication")
+            except OSError as e:
+                logger.warning("Could not delete token file: %s", e)
+
         self._mi_account = MiAccount(
             self._session, account, password, str(TOKEN_FILE)
         )
@@ -52,9 +72,12 @@ class XiaomiClient:
             if ok:
                 self._mina = MiNAService(self._mi_account)
                 logger.info("Xiaomi login successful")
+            else:
+                self._mina = None
             return ok
         except Exception as e:
             logger.error("Xiaomi login failed: %s", e)
+            self._mina = None
             return False
 
     async def load_from_db(self, db_session: Session) -> bool:

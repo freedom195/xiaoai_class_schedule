@@ -11,8 +11,9 @@ from database import ScheduleItem, Completion, get_session
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 
 TASK_TYPE_DEFAULTS = {
-    "rest":         {"color": "#64748b", "title": "休息时间", "points_reward": 5,  "keywords": ["休息"]},
+    "rest":         {"color": "#64748b", "title": "休息时间", "points_reward": 0,  "keywords": ["休息"]},
     "eye_exercise": {"color": "#0ea5e9", "title": "眼保健操", "points_reward": 10, "keywords": ["眼保健操", "眼操"]},
+    "screen":       {"color": "#f97316", "title": "",         "points_reward": 10, "keywords": ["平板", "电视", "电子"]},
     "exercise":     {"color": "#10b981", "title": "运动",     "points_reward": 20, "keywords": ["运动", "锻炼"]},
     "study":        {"color": "#3b82f6", "title": "",         "points_reward": 10, "keywords": []},
     "custom":       {"color": "#8b5cf6", "title": "",         "points_reward": 10, "keywords": []},
@@ -67,6 +68,8 @@ def _item_to_dict(item: ScheduleItem, for_date: str, completed_dates: Dict[int, 
         "recurrence_days": item.get_recurrence_days(),
         "completed": completed,
         "completion_date": for_date,
+        "voice_modified": getattr(item, "voice_modified", False),
+        "original_title": getattr(item, "original_title", ""),
     }
 
 
@@ -142,9 +145,14 @@ def _list_for_date(session: Session, target: date, child_id: Optional[int]) -> L
     all_items = session.exec(stmt).all()
 
     target_weekday = target.weekday()  # 0=Mon..6=Sun
+    target_str = target.isoformat()
     matched = []
 
     for item in all_items:
+        # Skip cancelled dates
+        if target_str in item.get_cancelled_dates():
+            continue
+
         item_date = item.start_time.date()
         rt = item.recurrence_type
 
@@ -358,77 +366,33 @@ def batch_delete(body: BatchDeleteBody, session: Session = Depends(get_session))
 
 
 @router.delete("/{item_id}")
-def delete_schedule_item(item_id: int, session: Session = Depends(get_session)):
+def delete_schedule_item(
+    item_id: int,
+    date: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """Delete a schedule item.
+
+    If *date* is provided (e.g. ?date=2026-06-02), only that single
+    occurrence is cancelled for recurring items (non-recurring items are
+    deleted outright).  If *date* is omitted, the template is deleted
+    entirely (all occurrences removed).
+    """
     item = session.get(ScheduleItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Schedule item not found")
-    session.delete(item)
-    session.commit()
-    return {"ok": True}
-    """
-    Delete all schedule items whose start_time falls within [start_date, end_date].
-    For recurring items, deletes the template (removes all occurrences).
-    Returns counts of deleted items split by type.
-    """
-    start_dt = datetime.fromisoformat(body.start_date)
-    end_dt = datetime.fromisoformat(body.end_date).replace(hour=23, minute=59, second=59)
 
-    stmt = select(ScheduleItem).where(
-        ScheduleItem.start_time >= start_dt,
-        ScheduleItem.start_time <= end_dt,
-    )
-    if body.child_id:
-        stmt = stmt.where(ScheduleItem.child_id == body.child_id)
-
-    items = session.exec(stmt).all()
-
-    # Also pick up recurring items whose template starts before the range
-    # (they would still show up within the range)
-    if body.include_recurring:
-        recurring_stmt = select(ScheduleItem).where(
-            ScheduleItem.recurrence_type != "none",
-            ScheduleItem.start_time < start_dt,
-        )
-        if body.child_id:
-            recurring_stmt = recurring_stmt.where(ScheduleItem.child_id == body.child_id)
-        recurring = session.exec(recurring_stmt).all()
-
-        # Filter to those that actually appear in the range
-        s_date = start_dt.date()
-        e_date = end_dt.date()
-        for item in recurring:
-            item_date = item.start_time.date()
-            rt = item.recurrence_type
-            days = item.get_recurrence_days()
-            appears = False
-            if rt == "daily":
-                appears = item_date <= e_date
-            elif rt == "weekly":
-                cur = s_date
-                while cur <= e_date:
-                    if cur.weekday() in days:
-                        appears = True
-                        break
-                    cur += timedelta(days=1)
-            if appears and item not in items:
-                items.append(item)
-
-    deleted_one_time = 0
-    deleted_recurring = 0
-    for item in items:
-        if item.recurrence_type == "none":
-            deleted_one_time += 1
-        else:
-            deleted_recurring += 1
+    if date and item.recurrence_type != "none":
+        # Cancel just this date
+        item.cancel_date(date)
+        session.add(item)
+        session.commit()
+        return {"ok": True, "cancelled_date": date, "deleted_template": False}
+    else:
+        # Delete the template entirely
         session.delete(item)
-
-    session.commit()
-    return {
-        "ok": True,
-        "deleted_one_time": deleted_one_time,
-        "deleted_recurring": deleted_recurring,
-        "total": deleted_one_time + deleted_recurring,
-    }
+        session.commit()
+        return {"ok": True, "deleted_template": True}
 
 
 def _extract_keywords(title: str) -> List[str]:
