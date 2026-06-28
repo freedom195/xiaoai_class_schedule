@@ -23,7 +23,7 @@ pip install -r requirements.txt
 # Start the server (listens on 0.0.0.0:8080)
 python main.py
 
-# Enable hot reload during development: change reload=False to reload=True in main.py line ~133
+# Enable hot reload during development: change reload=False to reload=True in main.py line ~145
 
 # Run database migration (only needed for pre-existing DBs missing new columns)
 python migrate.py
@@ -42,35 +42,44 @@ There are **no tests** in this project currently.
 
 Single-process asyncio event loop. FastAPI handles HTTP/WebSocket while two background `asyncio.create_task()` loops run concurrently:
 
-- `scheduler_loop(device_id)` — runs every 60s, checks for tasks starting/ending, sends TTS announcements
+- `scheduler_loop(device_id)` — runs every 60s, handles: (1) task start/end TTS announcements, (2) voice modify commands ("课程修改，为XXX")
 - `voice_poller_loop(device_id)` — runs every 5s, polls Xiaomi conversation history, parses completion utterances via jieba keyword matching
 
 ### Data Model (7 SQLModel tables)
 
 - **Child** — id, name, avatar_emoji, level, total_xp, available_points
-- **ScheduleItem** — child_id, title, task_type, start_time, end_time, color, points_reward, xp_reward, keywords (JSON), notes, recurrence_type, recurrence_days (JSON)
+- **ScheduleItem** — child_id, title, task_type, start_time, end_time, color, points_reward, xp_reward, keywords (JSON), notes, recurrence_type, recurrence_days (JSON), voice_modified, original_title, cancelled_dates (JSON)
 - **Completion** — schedule_item_id, child_id, completion_date (YYYY-MM-DD), completed_at, voice_raw, points_awarded, xp_awarded
 - **PointsTransaction** — child_id, delta, reason, created_at
 - **RedemptionRequest** — child_id, reward_name, points_cost, status (pending/approved/rejected), parent_note
 - **Badge** — child_id, badge_type, awarded_at
-- **AppConfig** — key/value store (holds encrypted Xiaomi credentials)
+- **AppConfig** — key/value store (holds encrypted Xiaomi credentials: `mi_account`, `mi_password`, `mi_device_id`)
 
 ### Key Modules
 
 | File | Purpose |
 |---|---|
-| `main.py` | FastAPI entry point, route mounting, lifespan, uvicorn startup |
-| `database.py` | SQLModel ORM models, SQLite engine, session helpers |
-| `config.py` | Fernet symmetric encryption for Xiaomi password |
-| `xiaomi_client.py` | miservice-fork wrapper (TTS + conversation polling) |
-| `scheduler.py` | Background loop: checks every 60s for task start/end announcements |
-| `voice_poller.py` | Background loop: polls every 5s for voice completion utterances |
-| `points_engine.py` | Points/XP settlement, level-up logic, badge awarding |
-| `ws_manager.py` | WebSocket broadcast manager for real-time frontend updates |
+| `main.py` | FastAPI entry point, route mounting, lifespan, Xiaomi config endpoints (`/api/config/xiaomi/*`), WebSocket endpoint, uvicorn startup |
+| `database.py` | SQLModel ORM models, SQLite engine at `{DATA_DIR}/class_schedule.db`, session helpers, config get/set |
+| `config.py` | Fernet symmetric encryption using PBKDF2HMAC-derived key for Xiaomi password |
+| `xiaomi_client.py` | miservice-fork wrapper — login, TTS, conversation polling, device list. Singleton `xiaomi_client` used app-wide |
+| `scheduler.py` | Background loop (60s): sends TTS for starting/ending tasks, processes voice modification commands ("课程修改，为XXX") |
+| `voice_poller.py` | Background loop (5s): polls Xiaomi conversations, matches completion utterances ("我做完了XX"), triggers points engine |
+| `points_engine.py` | Points/XP settlement, level-up logic (5 tiers), badge awarding (streak, keyword-based, perfect day) |
+| `ws_manager.py` | WebSocket broadcast manager for real-time frontend updates on completions |
+| `migrate.py` | One-shot migration script for adding columns to pre-existing databases |
 | `api/children.py` | Child CRUD REST endpoints |
-| `api/schedule.py` | Schedule CRUD + conflict detection + batch delete |
-| `api/points.py` | Completions, points ledger, redemption requests + approval |
-| `api/stats.py` | Statistics with daily completion rate + streak calc |
+| `api/schedule.py` | Schedule CRUD + recurrence engine + conflict detection + batch delete |
+| `api/points.py` | Completions, points ledger, redemption requests + parent approval flow |
+| `api/stats.py` | Statistics with daily completion rate + streak calculation |
+
+### Xiaomi Integration Flow
+
+1. User saves credentials via `/api/config/xiaomi` → encrypted with Fernet, stored in `AppConfig` table
+2. On server start (`lifespan`): `xiaomi_client.load_from_db()` decrypts credentials, logs into MiAccount/MiNAService
+3. `scheduler_loop` sends TTS announcements for task start/end; also listens for "课程修改" voice commands
+4. `voice_poller_loop` polls `get_latest_conversation()` every 5s; matched completion utterances trigger `settle_completion()`
+5. Xiaomi auth token cached at `{DATA_DIR}/.mi.token`; saving new credentials uses `force_reauth=True` to validate against real servers
 
 ### Security
 
@@ -79,13 +88,25 @@ Single-process asyncio event loop. FastAPI handles HTTP/WebSocket while two back
 
 ## Environment Variables
 
-- `DATA_DIR` — directory for SQLite DB and auth files (default: `.`)
+- `DATA_DIR` — directory for SQLite DB and Xiaomi token file (default: `.`, Docker: `/app/data`)
 - `APP_SECRET` — optional override for encryption key derivation
+
+## Frontend
+
+Frontend is served as static files from `static/`:
+- `static/index.html` — shell page, loads Vue 3 + component scripts
+- `static/app.js` — shared state, API helpers, nav routing
+- `static/components/Calendar.js` — FullCalendar-based schedule view
+- `static/components/Leaderboard.js` — child levels/points ranking
+- `static/components/Redemption.js` — reward redemption UI
+- `static/components/Stats.js` — Chart.js statistics dashboard
+- `static/components/Settings.js` — Xiaomi credential setup form
 
 ## Notes for Development
 
 - **No build step** — frontend is served as static files directly from `static/`. Changes are visible on page refresh.
-- **Database** — SQLite file at `./class_schedule.db` (or `./data/class_schedule.db` in Docker). Open with any SQLite client.
+- **Database** — SQLite file at `{DATA_DIR}/class_schedule.db`. Open with any SQLite client.
+- **Docker** — data persisted via volume mount `./data:/app/data`. The `DATA_DIR` env var controls this path.
 - **Adding API endpoints** — create functions in the appropriate `api/*.py` file; routers are already registered in `main.py`.
 - **Adding frontend pages** — create a component in `static/components/`, load it in `index.html`, and add a nav entry in the sidebar.
 - **APScheduler** is listed in `requirements.txt` but not currently used; the app uses raw `asyncio.sleep()` loops instead.

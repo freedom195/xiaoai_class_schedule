@@ -10,6 +10,9 @@ migrations = [
     ("task_type",        "ALTER TABLE scheduleitem ADD COLUMN task_type TEXT NOT NULL DEFAULT 'study'"),
     ("recurrence_type",  "ALTER TABLE scheduleitem ADD COLUMN recurrence_type TEXT NOT NULL DEFAULT 'none'"),
     ("recurrence_days",  "ALTER TABLE scheduleitem ADD COLUMN recurrence_days TEXT NOT NULL DEFAULT '[]'"),
+    ("voice_modified",   "ALTER TABLE scheduleitem ADD COLUMN voice_modified BOOLEAN NOT NULL DEFAULT 0"),
+    ("original_title",   "ALTER TABLE scheduleitem ADD COLUMN original_title TEXT NOT NULL DEFAULT ''"),
+    ("cancelled_dates",  "ALTER TABLE scheduleitem ADD COLUMN cancelled_dates TEXT NOT NULL DEFAULT '[]'"),
 ]
 for col, sql in migrations:
     if col not in existing:
