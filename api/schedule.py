@@ -376,6 +376,8 @@ def batch_delete(body: BatchDeleteBody, session: Session = Depends(get_session))
             deleted_one_time += 1
         else:
             deleted_recurring += 1
+        for c in session.exec(select(Completion).where(Completion.schedule_item_id == item.id)).all():
+            session.delete(c)
         session.delete(item)
     session.commit()
     return {"ok": True, "deleted_one_time": deleted_one_time, "deleted_recurring": deleted_recurring, "total": deleted_one_time + deleted_recurring}
@@ -418,6 +420,8 @@ def delete_schedule_item(
             return {"ok": True, "cancelled_date": date, "deleted_template": False}
     else:
         # Delete the template entirely
+        for c in session.exec(select(Completion).where(Completion.schedule_item_id == item_id)).all():
+            session.delete(c)
         session.delete(item)
         session.commit()
         return {"ok": True, "deleted_template": True}

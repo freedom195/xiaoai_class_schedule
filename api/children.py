@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from pydantic import BaseModel
 from typing import Optional
-from database import Child, get_session
+from database import Child, ScheduleItem, Completion, PointsTransaction, RedemptionRequest, Badge, get_session
 
 router = APIRouter(prefix="/api/children", tags=["children"])
 
@@ -52,6 +52,20 @@ def delete_child(child_id: int, session: Session = Depends(get_session)):
     child = session.get(Child, child_id)
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
+    # Cascade: delete all related data
+    items = session.exec(select(ScheduleItem).where(ScheduleItem.child_id == child_id)).all()
+    item_ids = [i.id for i in items]
+    for iid in item_ids:
+        for c in session.exec(select(Completion).where(Completion.schedule_item_id == iid)).all():
+            session.delete(c)
+    for i in items:
+        session.delete(i)
+    for txn in session.exec(select(PointsTransaction).where(PointsTransaction.child_id == child_id)).all():
+        session.delete(txn)
+    for req in session.exec(select(RedemptionRequest).where(RedemptionRequest.child_id == child_id)).all():
+        session.delete(req)
+    for badge in session.exec(select(Badge).where(Badge.child_id == child_id)).all():
+        session.delete(badge)
     session.delete(child)
     session.commit()
     return {"ok": True}
