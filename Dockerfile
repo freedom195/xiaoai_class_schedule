@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source
 COPY main.py config.py database.py ws_manager.py \
      scheduler.py voice_poller.py points_engine.py \
-     xiaomi_client.py ./
+     xiaomi_client.py schedule_utils.py ./
 COPY api/ ./api/
 COPY static/ ./static/
 

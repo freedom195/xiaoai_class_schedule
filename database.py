@@ -41,6 +41,7 @@ class ScheduleItem(SQLModel, table=True):
     cancelled_dates: str = "[]"       # JSON array of date strings (YYYY-MM-DD) that are cancelled
     recurrence_type: str = "none"     # none | daily | weekly
     recurrence_days: str = "[]"       # JSON array of weekday ints (0=Mon..6=Sun), weekly only
+    recurrence_end_date: Optional[str] = None  # last active date (YYYY-MM-DD), None = forever
 
     def get_keywords(self) -> List[str]:
         return json.loads(self.keywords)

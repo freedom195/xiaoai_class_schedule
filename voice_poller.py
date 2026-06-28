@@ -14,6 +14,7 @@ from sqlmodel import Session, select
 
 from database import Child, ScheduleItem, Completion, engine
 from points_engine import settle_completion
+from schedule_utils import get_items_active_in_window
 from xiaomi_client import xiaomi_client
 from ws_manager import ws_manager
 
@@ -139,20 +140,21 @@ async def _poll(device_id: str):
     window_end = now + timedelta(minutes=MATCH_WINDOW_MINUTES)
 
     with Session(engine) as session:
-        # Candidate items in the time window
-        candidates = session.exec(
-            select(ScheduleItem).where(
-                ScheduleItem.start_time >= window_start,
-                ScheduleItem.end_time <= window_end + timedelta(hours=1),
-            )
-        ).all()
+        # Candidate items in the time window (handles recurring items)
+        candidates = get_items_active_in_window(
+            session, window_start, window_end + timedelta(hours=1)
+        )
 
-        # Filter out already-completed items
+        # Filter out items already completed today
         candidate_ids = [i.id for i in candidates]
         completed_ids: Set[int] = set()
         if candidate_ids:
+            today_str = now.strftime("%Y-%m-%d")
             comps = session.exec(
-                select(Completion).where(Completion.schedule_item_id.in_(candidate_ids))
+                select(Completion).where(
+                    Completion.schedule_item_id.in_(candidate_ids),
+                    Completion.completion_date == today_str,
+                )
             ).all()
             completed_ids = {c.schedule_item_id for c in comps}
 

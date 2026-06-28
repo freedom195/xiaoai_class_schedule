@@ -13,6 +13,7 @@ migrations = [
     ("voice_modified",   "ALTER TABLE scheduleitem ADD COLUMN voice_modified BOOLEAN NOT NULL DEFAULT 0"),
     ("original_title",   "ALTER TABLE scheduleitem ADD COLUMN original_title TEXT NOT NULL DEFAULT ''"),
     ("cancelled_dates",  "ALTER TABLE scheduleitem ADD COLUMN cancelled_dates TEXT NOT NULL DEFAULT '[]'"),
+    ("recurrence_end_date", "ALTER TABLE scheduleitem ADD COLUMN recurrence_end_date TEXT"),
 ]
 for col, sql in migrations:
     if col not in existing:

@@ -33,6 +33,7 @@ class ScheduleItemCreate(BaseModel):
     notes: str = ""
     recurrence_type: str = "none"
     recurrence_days: List[int] = []
+    recurrence_end_date: Optional[str] = None
 
 
 class ScheduleItemUpdate(BaseModel):
@@ -47,6 +48,7 @@ class ScheduleItemUpdate(BaseModel):
     notes: Optional[str] = None
     recurrence_type: Optional[str] = None
     recurrence_days: Optional[List[int]] = None
+    recurrence_end_date: Optional[str] = None
 
 
 def _item_to_dict(item: ScheduleItem, for_date: str, completed_dates: Dict[int, Set[str]]) -> dict:
@@ -70,6 +72,7 @@ def _item_to_dict(item: ScheduleItem, for_date: str, completed_dates: Dict[int, 
         "completion_date": for_date,
         "voice_modified": getattr(item, "voice_modified", False),
         "original_title": getattr(item, "original_title", ""),
+        "recurrence_end_date": getattr(item, "recurrence_end_date", None),
     }
 
 
@@ -153,6 +156,11 @@ def _list_for_date(session: Session, target: date, child_id: Optional[int]) -> L
         if target_str in item.get_cancelled_dates():
             continue
 
+        # Skip if past recurrence_end_date
+        end_str = getattr(item, "recurrence_end_date", None)
+        if end_str and target > datetime.strptime(end_str, "%Y-%m-%d").date():
+            continue
+
         item_date = item.start_time.date()
         rt = item.recurrence_type
 
@@ -215,6 +223,11 @@ def _find_conflicts(
 
     conflicts = []
     for item in all_items:
+        # Skip if past recurrence_end_date
+        end_str = getattr(item, "recurrence_end_date", None)
+        if end_str and target_date > datetime.strptime(end_str, "%Y-%m-%d").date():
+            continue
+
         # Determine effective time on target_date
         rt = item.recurrence_type
         item_date = item.start_time.date()
@@ -265,6 +278,7 @@ def create_schedule_item(body: ScheduleItemCreate, session: Session = Depends(ge
         notes=body.notes,
         recurrence_type=body.recurrence_type,
         recurrence_days=json.dumps(body.recurrence_days),
+        recurrence_end_date=body.recurrence_end_date,
     )
     session.add(item)
     session.commit()
@@ -299,6 +313,8 @@ def update_schedule_item(item_id: int, body: ScheduleItemUpdate, session: Sessio
         item.recurrence_type = body.recurrence_type
     if body.recurrence_days is not None:
         item.recurrence_days = json.dumps(body.recurrence_days)
+    if body.recurrence_end_date is not None:
+        item.recurrence_end_date = body.recurrence_end_date
     session.add(item)
     session.commit()
     session.refresh(item)
@@ -369,25 +385,37 @@ def batch_delete(body: BatchDeleteBody, session: Session = Depends(get_session))
 def delete_schedule_item(
     item_id: int,
     date: Optional[str] = None,
+    mode: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
     """Delete a schedule item.
 
     If *date* is provided (e.g. ?date=2026-06-02), only that single
     occurrence is cancelled for recurring items (non-recurring items are
-    deleted outright).  If *date* is omitted, the template is deleted
-    entirely (all occurrences removed).
+    deleted outright).
+
+    If *mode=forward* is used with *date*, all occurrences from *date*
+    onward are removed (recurrence_end_date is set to day before date).
+
+    If *date* is omitted, the template is deleted entirely.
     """
     item = session.get(ScheduleItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Schedule item not found")
 
     if date and item.recurrence_type != "none":
-        # Cancel just this date
-        item.cancel_date(date)
-        session.add(item)
-        session.commit()
-        return {"ok": True, "cancelled_date": date, "deleted_template": False}
+        if mode == "forward":
+            target = datetime.strptime(date, "%Y-%m-%d").date()
+            item.recurrence_end_date = (target - timedelta(days=1)).isoformat()
+            session.add(item)
+            session.commit()
+            return {"ok": True, "forward_cancelled_from": date, "deleted_template": False}
+        else:
+            # Cancel just this date
+            item.cancel_date(date)
+            session.add(item)
+            session.commit()
+            return {"ok": True, "cancelled_date": date, "deleted_template": False}
     else:
         # Delete the template entirely
         session.delete(item)

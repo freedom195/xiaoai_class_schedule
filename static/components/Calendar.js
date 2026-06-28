@@ -118,11 +118,14 @@ const CalendarPage = {
           ✓ 完成
         </button>
         <span v-if="modal.id && modal.completed && modal.for_date === todayStr()" style="color:var(--success);font-weight:600;font-size:13px;margin-right:8px">已完成 ✓</span>
-        <button v-if="modal.id" class="btn btn-danger-outline" @click="deleteItem(false)">
+        <button v-if="modal.id" class="btn btn-danger-outline" @click="deleteItem('single')">
           {{ modal.recurrence_type !== 'none' ? '删除本次' : '删除' }}
         </button>
-        <button v-if="modal.id && modal.recurrence_type !== 'none'" class="btn btn-danger" @click="deleteItem(true)">
-          删除全部重复
+        <button v-if="modal.id && modal.recurrence_type !== 'none'" class="btn btn-danger-outline" @click="deleteItem('forward')">
+          删除后续
+        </button>
+        <button v-if="modal.id && modal.recurrence_type !== 'none'" class="btn btn-danger" @click="deleteItem('all')">
+          删除全部
         </button>
         <button class="btn btn-primary" @click="saveItem">保存</button>
       </div>
@@ -316,6 +319,7 @@ const CalendarPage = {
         notes: item.extendedProps.notes || '',
         recurrence_type: item.extendedProps.recurrence_type || 'none',
         recurrence_days: [...rd],
+        recurrence_end_date: item.extendedProps.recurrence_end_date || '',
       };
     }
 
@@ -349,6 +353,7 @@ const CalendarPage = {
           completion_date: i.completion_date,
           voice_modified: i.voice_modified || false,
           original_title: i.original_title || '',
+          recurrence_end_date: i.recurrence_end_date || null,
         },
         classNames: [
           ...(i.completed ? ['completed-event'] : []),
@@ -441,22 +446,32 @@ const CalendarPage = {
       }
     }
 
-    async function deleteItem(deleteAll) {
+    async function deleteItem(mode) {
       const m = modal.value;
-      const label = deleteAll
-        ? '删除此重复任务的所有日期实例？'
-        : '删除本次课程？';
+      let label;
+      if (mode === 'single') {
+        label = '删除本次课程？';
+      } else if (mode === 'forward') {
+        label = `删除从 ${m.for_date} 起的所有后续课程？（已过去的课程将保留）`;
+      } else {
+        label = '删除此重复任务的全部课程？（包括已过去的）';
+      }
       if (!confirm(label)) return;
 
       let url = `/api/schedule/${m.id}`;
-      if (!deleteAll && m.for_date && m.recurrence_type !== 'none') {
-        url += `?date=${m.for_date}`;
+      if (m.recurrence_type !== 'none' && m.for_date) {
+        if (mode === 'forward') {
+          url += `?date=${m.for_date}&mode=forward`;
+        } else if (mode === 'single') {
+          url += `?date=${m.for_date}`;
+        }
       }
       const resp = await fetch(url, { method: 'DELETE' });
       if (resp.ok) {
         m.open = false;
         calendar?.refetchEvents();
-        emit('toast', deleteAll ? '所有重复课程已删除' : '本次课程已删除', 'warn');
+        const msg = mode === 'forward' ? '后续课程已删除' : mode === 'all' ? '全部课程已删除' : '本次课程已删除';
+        emit('toast', msg, 'warn');
       } else {
         const err = await resp.json().catch(() => ({}));
         emit('toast', err.detail || '删除失败', 'error');

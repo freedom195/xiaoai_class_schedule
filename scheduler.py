@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from sqlmodel import Session, select
 
 from database import Child, ScheduleItem, Completion, engine
+from schedule_utils import get_items_active_in_window, get_items_starting_in_window, get_items_ending_in_window
 from xiaomi_client import xiaomi_client
 from ws_manager import ws_manager
 
@@ -71,12 +72,9 @@ async def _process_voice_modify(device_id: str, session: Session, now: datetime)
 
     # Find the ongoing item(s) for the child whose name appears in the query,
     # or fall back to the first ongoing item.
-    ongoing = session.exec(
-        select(ScheduleItem).where(
-            ScheduleItem.start_time <= now,
-            ScheduleItem.end_time > now,
-        )
-    ).all()
+    ongoing = get_items_active_in_window(
+        session, now - timedelta(seconds=1), now + timedelta(seconds=1)
+    )
     if not ongoing:
         logger.info("Voice modify: no ongoing item to modify")
         return
@@ -130,12 +128,9 @@ async def _tick(device_id: str):
         announce_start_from = window_start + timedelta(minutes=ADVANCE_MINUTES)
         announce_start_to = window_end + timedelta(minutes=ADVANCE_MINUTES)
 
-        starting = session.exec(
-            select(ScheduleItem).where(
-                ScheduleItem.start_time >= announce_start_from,
-                ScheduleItem.start_time <= announce_start_to,
-            )
-        ).all()
+        starting = get_items_starting_in_window(
+            session, announce_start_from, announce_start_to
+        )
 
         for item in starting:
             child = session.get(Child, item.child_id)
@@ -146,12 +141,9 @@ async def _tick(device_id: str):
             logger.info("Start TTS: [%s] %s", child.name, item.title)
 
         # Tasks ending now
-        ending = session.exec(
-            select(ScheduleItem).where(
-                ScheduleItem.end_time >= window_start,
-                ScheduleItem.end_time <= window_end,
-            )
-        ).all()
+        ending = get_items_ending_in_window(
+            session, window_start, window_end
+        )
 
         for item in ending:
             # Only remind if not already completed
