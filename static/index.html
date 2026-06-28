@@ -125,6 +125,40 @@
       border-radius: 3px;
       font-weight: 400;
     }
+    .event-complete-btn {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: none;
+      background: var(--success);
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      z-index: 5;
+      transition: transform .1s;
+    }
+    .event-complete-btn:hover {
+      transform: scale(1.15);
+    }
+    .fc-event:hover .event-complete-btn {
+      display: flex;
+    }
+    .completed-event .event-complete-btn {
+      display: none !important;
+    }
+    .fc-event {
+      position: relative;
+      overflow: visible;
+    }
   </style>
 </head>
 <body>
@@ -158,7 +192,7 @@
 
   <!-- Main -->
   <div id="main">
-    <calendar-page v-if="page==='calendar'" :children="children" @toast="showToast"></calendar-page>
+    <calendar-page v-if="page==='calendar'" :children="children" @toast="showToast" @reload-children="loadChildren"></calendar-page>
     <leaderboard-page v-else-if="page==='leaderboard'" :children="children" @reload-children="loadChildren" @toast="showToast"></leaderboard-page>
     <stats-page v-else-if="page==='stats'" :children="children"></stats-page>
     <redemption-page v-else-if="page==='redemption'" :children="children" @pending-count="pendingCount=$event" @toast="showToast"></redemption-page>

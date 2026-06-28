@@ -17,7 +17,7 @@ def get_stats(
     session: Session = Depends(get_session),
 ):
     # Default: last 30 days
-    end_dt = datetime.fromisoformat(end) if end else datetime.now()
+    end_dt = datetime.fromisoformat(end).replace(hour=23, minute=59, second=59) if end else datetime.now().replace(hour=23, minute=59, second=59)
     start_dt = datetime.fromisoformat(start) if start else end_dt - timedelta(days=30)
 
     children_q = select(Child)

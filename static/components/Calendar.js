@@ -11,7 +11,7 @@ const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 
 const CalendarPage = {
   props: ['children'],
-  emits: ['toast'],
+  emits: ['toast', 'reload-children'],
   template: `
 <div class="page">
   <div class="page-header">
@@ -437,9 +437,12 @@ const CalendarPage = {
         }),
       });
       if (resp.ok) {
+        const data = await resp.json().catch(() => ({}));
         m.completed = true;
         calendar?.refetchEvents();
-        emit('toast', '课程已完成！', 'success');
+        emit('reload-children');
+        window.dispatchEvent(new CustomEvent('completion-updated'));
+        emit('toast', `课程已完成！+${data.points_awarded || '?'}分`, 'success');
       } else {
         const err = await resp.json().catch(() => ({}));
         emit('toast', err.detail || '操作失败', 'error');
@@ -494,6 +497,40 @@ const CalendarPage = {
         events: loadEvents,
         select: (info) => openCreate(info.start, info.end),
         eventClick: (info) => openEdit(info.event),
+        eventDidMount: (info) => {
+          const ext = info.event.extendedProps;
+          if (ext.completed) return;
+          const btn = document.createElement('button');
+          btn.className = 'event-complete-btn';
+          btn.innerHTML = '✓';
+          btn.title = '手动完成';
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const title = info.event.title.replace(/ ✓$/, '').replace(/ ✏️$/, '').replace(/ ↻$/, '');
+            if (!confirm(`确认完成「${title}」？`)) return;
+            const resp = await fetch('/api/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                schedule_item_id: ext.item_id,
+                child_id: ext.child_id,
+                completion_date: ext.completion_date || undefined,
+              }),
+            });
+            if (resp.ok) {
+              info.view.calendar.refetchEvents();
+              emit('reload-children');
+              window.dispatchEvent(new CustomEvent('completion-updated'));
+              const data = await resp.json().catch(() => ({}));
+              emit('toast', `课程已完成！+${data.points_awarded || '?'}分`, 'success');
+            } else {
+              const err = await resp.json().catch(() => ({}));
+              emit('toast', err.detail || '操作失败', 'error');
+            }
+          });
+          info.el.appendChild(btn);
+        },
         eventDrop: async (info) => {
           await fetch(`/api/schedule/${info.event.extendedProps.item_id}`, {
             method: 'PUT',

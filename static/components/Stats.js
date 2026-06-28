@@ -61,6 +61,7 @@ const StatsPage = {
       if (childId.value) params.set('child_id', childId.value);
       if (start.value) params.set('start', start.value);
       if (end.value) params.set('end', end.value);
+      params.set('_t', Date.now());
       const res = await fetch('/api/stats?' + params);
       stats.value = await res.json();
       loading.value = false;
@@ -105,6 +106,7 @@ const StatsPage = {
 
     onMounted(() => setRange(30));
     watch(childId, load);
+    watch(() => props.children, () => load(), { deep: true });
 
     return { stats, loading, childId, setRange, load };
   }

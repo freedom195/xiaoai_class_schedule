@@ -20,7 +20,7 @@ const app = createApp({
     }
 
     async function loadChildren() {
-      const res = await fetch('/api/children');
+      const res = await fetch('/api/children?_t=' + Date.now());
       children.value = await res.json();
     }
 
@@ -76,6 +76,11 @@ const app = createApp({
       connectWS();
       // Re-check Xiaomi status every 30s
       setInterval(checkXiaomiStatus, 30000);
+      // Backup: listen for manual completion events
+      window.addEventListener('completion-updated', () => {
+        loadChildren();
+        loadRedemptions();
+      });
     });
 
     return { page, children, toasts, pendingCount, wsConnected, xiaomiConnected, xiaomiConfigured, showToast, loadChildren, loadRedemptions, checkXiaomiStatus };
