@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -121,12 +121,38 @@ async def websocket_endpoint(ws: WebSocket):
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that never returns 304 — browser always gets fresh content."""
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        # Skip is_not_modified check entirely — always return 200 with no-cache headers
+        from starlette.responses import FileResponse as FR
+        response = FR(full_path, status_code=status_code, stat_result=stat_result)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        if "etag" in response.headers:
+            del response.headers["etag"]
+        if "last-modified" in response.headers:
+            del response.headers["last-modified"]
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
+
+
+import time as _time
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    # Inject timestamp version into JS references to completely bust browser cache
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    ver = str(int(_time.time()))
+    import re
+    html = re.sub(r'src="(/static/.+?\.js)"', f'src="\\1?v={ver}"', html)
+    resp = Response(content=html, media_type="text/html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    return resp
 
 
 if __name__ == "__main__":
