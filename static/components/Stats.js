@@ -43,8 +43,8 @@ const StatsPage = {
     const stats = ref([]);
     const loading = ref(false);
     const childId = ref('');
-    let start = ref('');
-    let end = ref('');
+    const start = ref('');
+    const end = ref('');
     let chart = null;
 
     function setRange(days) {

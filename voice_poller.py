@@ -196,24 +196,40 @@ async def _poll(device_id: str):
             if not result["ok"]:
                 continue
 
-            # TTS encouragement
-            encouragement = _build_encouragement(result)
-            await xiaomi_client.tts(device_id, encouragement)
+            # 1) Write the event log FIRST so it can never be skipped by a
+            #    downstream broadcast/TTS failure. We use the child_name already
+            #    returned by settle_completion to avoid an extra session.get
+            #    that may fail after the commit.
+            try:
+                log_event(
+                    "VOICE",
+                    f"孩子: {result['child_name']} | 任务: {result['task_title']} "
+                    f"| +{result['points_awarded']}分 | 语音: {text}",
+                )
+            except Exception as e:
+                logger.error("log_event VOICE failed: %s", e)
 
-            # WebSocket push for real-time frontend update
-            await ws_manager.broadcast({
-                "type": "completion",
-                "child_id": child_id,
-                "task_title": item.title,
-                "points_awarded": item.points_reward,
-                "leveled_up": result["leveled_up"],
-                "new_badges": result["new_badges"],
-            })
+            # 2) TTS encouragement (best effort)
+            try:
+                encouragement = _build_encouragement(result)
+                await xiaomi_client.tts(device_id, encouragement)
+            except Exception as e:
+                logger.error("TTS failed: %s", e)
+
+            # 3) WebSocket push for real-time frontend update
+            try:
+                await ws_manager.broadcast({
+                    "type": "completion",
+                    "child_id": child_id,
+                    "task_title": item.title,
+                    "points_awarded": item.points_reward,
+                    "leveled_up": result["leveled_up"],
+                    "new_badges": result.get("new_badges", []),
+                })
+            except Exception as e:
+                logger.error("ws broadcast failed: %s", e)
 
             logger.info(
                 "Completion settled: child_id=%s item=%s pts=%s",
                 child_id, item.title, item.points_reward,
             )
-
-            child = session.get(Child, child_id)
-            log_event("VOICE", f"孩子: {child.name if child else '?'} | 任务: {item.title} | +{item.points_reward}分 | 语音: {text}")
