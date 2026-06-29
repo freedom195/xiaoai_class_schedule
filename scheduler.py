@@ -30,15 +30,21 @@ def _format_time(dt: datetime) -> str:
     return f"{h}点{m}分" if m != 0 else f"{h}点"
 
 
+def _duration_minutes(start: datetime, end: datetime) -> int:
+    return int((end - start).total_seconds() // 60)
+
+
 def _build_start_tts(child_name: str, item: ScheduleItem) -> str:
     kws = item.get_keywords()
     keyword = kws[0] if kws else item.title
     time_str = _format_time(item.start_time)
     end_str = _format_time(item.end_time)
+    duration_minutes = _duration_minutes(item.start_time, item.end_time)
     notes = ("，" + item.notes) if item.notes else ""
     say_done = "小爱小爱，我做完了" + keyword
     return (
         child_name + "，现在" + time_str + "，" + item.title + "开始啦！"
+        + f"你有{duration_minutes}分钟时间可以来完成，"
         + "记得" + end_str + "之前完成哦" + notes + "。"
         + "完成后说'" + say_done + "'就可以记录啦~"
     )
