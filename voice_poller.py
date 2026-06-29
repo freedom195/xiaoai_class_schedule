@@ -16,6 +16,7 @@ from database import Child, ScheduleItem, Completion, engine
 from event_logger import log_event
 from points_engine import settle_completion
 from schedule_utils import get_items_active_in_window
+from scheduler import apply_voice_modify
 from xiaomi_client import xiaomi_client
 from ws_manager import ws_manager
 
@@ -130,13 +131,25 @@ async def _poll(device_id: str):
     if not text:
         return
 
+    logger.info("Voice query received: %s", text)
+
+    now = datetime.now()
+
+    # Route 1: voice modify command ("课程修改/课表修改，为XX")
+    # This must be checked BEFORE completion patterns so that a modify
+    # command is never mis-parsed as a completion.
+    with Session(engine) as session:
+        handled = await apply_voice_modify(device_id, session, text, now)
+    if handled:
+        return
+
+    # Route 2: completion command ("我做完了XX")
     hint = _extract_task_hint(text)
     if not hint:
         return
 
     logger.info("Voice match candidate: %r → hint=%r", text, hint)
 
-    now = datetime.now()
     window_start = now - timedelta(minutes=MATCH_WINDOW_MINUTES)
     window_end = now + timedelta(minutes=MATCH_WINDOW_MINUTES)
 

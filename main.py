@@ -18,11 +18,14 @@ from voice_poller import voice_poller_loop
 from ws_manager import ws_manager
 from api import children, schedule, points, stats
 
+APP_VERSION = "1.0.0"
+
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 # 保留应用自身的 INFO 日志
 logging.getLogger("main").setLevel(logging.INFO)
 logging.getLogger("scheduler").setLevel(logging.INFO)
 logging.getLogger("voice_poller").setLevel(logging.INFO)
+logging.getLogger("xiaomi_client").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -166,6 +169,7 @@ def index():
     ver = str(int(_time.time()))
     import re
     html = re.sub(r'src="(/static/.+?\.js)"', f'src="\\1?v={ver}"', html)
+    html = html.replace("<!--APP_VERSION-->", f"v{APP_VERSION}")
     resp = Response(content=html, media_type="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
     return resp

@@ -47,11 +47,18 @@ const StatsPage = {
     const end = ref('');
     let chart = null;
 
+    function fmtDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
     function setRange(days) {
       const e = new Date();
       const s = new Date(e.getTime() - days * 86400000);
-      end.value = e.toISOString().slice(0,10);
-      start.value = s.toISOString().slice(0,10);
+      end.value = fmtDate(e);
+      start.value = fmtDate(s);
       load();
     }
 

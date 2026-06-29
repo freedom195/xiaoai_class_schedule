@@ -136,40 +136,77 @@ class XiaomiClient:
     async def get_latest_conversation(self, device_id: str) -> Optional[str]:
         """
         Return the latest user utterance from the speaker, or None if no new message.
-        Tracks timestamp so each call only returns messages newer than the last one.
+
+        The conversation API's `timestamp` parameter means "return records
+        BEFORE this time" (not after). So we always pass the current time to
+        get the most recent records, then use _last_ask_timestamp for local
+        dedup: only return a record whose time is newer than the last one we
+        handed back.
         """
-        if not self._mina or not self._session:
+        if not self._mina or not self._session or not self._mi_account:
             return None
         try:
             hardware = await self._get_hardware(device_id)
-            since_ts = self._last_ask_timestamp.get(device_id, int(time.time() * 1000) - 5000)
-            url = LATEST_ASK_API.format(hardware=hardware, timestamp=since_ts)
+            now_ms = int(time.time() * 1000)
+            # API returns records *before* this timestamp, so pass now.
+            url = LATEST_ASK_API.format(hardware=hardware, timestamp=now_ms)
 
-            cookies = {}
-            if hasattr(self._mi_account, "get_cookies"):
-                cookies = await self._mi_account.get_cookies()
+            # Build cookies the same way MiAccount.mi_request does, plus
+            # deviceId which the conversation API additionally requires.
+            token = self._mi_account.token
+            if not token:
+                logger.warning("get_latest_conversation: no token, not logged in")
+                return None
+            cookies = {
+                "userId": str(token["userId"]),
+                "serviceToken": token["micoapi"][1],
+                "deviceId": device_id,
+            }
+            headers = {
+                "User-Agent": "MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; iOS 14.4.0) Alamofire/6.0.103 MICO/iOSApp/appStore/6.0.103"
+            }
 
-            async with self._session.get(url, cookies=cookies, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+            async with self._session.get(
+                url, cookies=cookies, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
                 if resp.status != 200:
+                    logger.warning("conversation API status=%s", resp.status)
                     return None
                 data = await resp.json(content_type=None)
 
-            records = data.get("data", {}).get("records", [])
+            # API returns {"code":0, "data": "<json string>"} — the data
+            # field is a JSON-encoded string, not a dict. Must parse twice.
+            code = data.get("code", -1)
+            if code != 0:
+                logger.warning("conversation API code=%s msg=%s", code, data.get("message"))
+                return None
+
+            inner = data.get("data")
+            if isinstance(inner, str):
+                inner = json.loads(inner)
+            if not isinstance(inner, dict):
+                return None
+
+            records = inner.get("records", [])
             if not records:
                 return None
 
+            # records[0] is the newest. Dedup against the last record we
+            # already returned for this device.
             latest = records[0]
             ts = latest.get("time", 0)
-            if ts <= since_ts:
+            last_ts = self._last_ask_timestamp.get(device_id, 0)
+            if ts <= last_ts:
                 return None
 
             self._last_ask_timestamp[device_id] = ts
             query = latest.get("query", "")
-            logger.debug("New voice query from %s: %s", device_id, query)
+            logger.info("New voice query from %s: %s", device_id, query)
             return query
 
         except Exception as e:
-            logger.debug("get_latest_conversation error: %s", e)
+            logger.warning("get_latest_conversation error: %s", e)
             return None
 
     async def test_connection(self, device_id: str) -> dict:

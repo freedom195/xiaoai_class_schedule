@@ -159,6 +159,13 @@
       position: relative;
       overflow: visible;
     }
+
+    /* Version tag in sidebar footer */
+    .version-tag {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--text3);
+    }
   </style>
 </head>
 <body>
@@ -190,6 +197,7 @@
         <div class="dot" :class="{off: !xiaomiConnected}"></div>
         {{ xiaomiConnected ? '小爱已连接' : (xiaomiConfigured ? '小爱未登录' : '小爱未配置') }}
       </div>
+      <div class="version-tag"><!--APP_VERSION--></div>
     </div>
   </div>
 

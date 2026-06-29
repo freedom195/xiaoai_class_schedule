@@ -41,7 +41,7 @@ def _build_start_tts(child_name: str, item: ScheduleItem) -> str:
     end_str = _format_time(item.end_time)
     duration_minutes = _duration_minutes(item.start_time, item.end_time)
     notes = ("，" + item.notes) if item.notes else ""
-    say_done = "小爱小爱，我做完了" + keyword
+    say_done = "小爱同学，我做完了" + keyword
     return (
         child_name + "，现在" + time_str + "，" + item.title + "开始啦！"
         + f"你有{duration_minutes}分钟时间可以来完成，"
@@ -57,15 +57,16 @@ def _build_end_tts(child_name: str, item: ScheduleItem) -> str:
     return base
 
 
-async def _process_voice_modify(device_id: str, session: Session, now: datetime):
-    """Check the speaker for a '课程修改/课表修改，为XX' voice command and apply it."""
-    query = await xiaomi_client.get_latest_conversation(device_id)
-    if not query:
-        return
-    logger.info("Voice query received: %s", query)
+async def apply_voice_modify(device_id: str, session: Session, query: str, now: datetime) -> bool:
+    """Apply a '课程修改/课表修改，为XX' voice command.
+
+    Returns True if the command was recognised and handled, False otherwise.
+    Does NOT call get_latest_conversation — the caller is responsible for
+    fetching the utterance so that only one consumer owns the dedup cursor.
+    """
     m = _MODIFY_RE.search(query)
     if not m:
-        return
+        return False
 
     new_title = m.group(1).strip()
     # Strip trailing punctuation that ASR often appends
@@ -73,7 +74,7 @@ async def _process_voice_modify(device_id: str, session: Session, now: datetime)
         if new_title.endswith(ch):
             new_title = new_title[:-1]
     if not new_title:
-        return
+        return False
 
     # Find the ongoing item(s) for the child whose name appears in the query,
     # or fall back to the first ongoing item.
@@ -82,7 +83,7 @@ async def _process_voice_modify(device_id: str, session: Session, now: datetime)
     )
     if not ongoing:
         logger.info("Voice modify: no ongoing item to modify")
-        return
+        return False
 
     # Try to match a child name mentioned in the query
     children = session.exec(select(Child)).all()
@@ -107,6 +108,7 @@ async def _process_voice_modify(device_id: str, session: Session, now: datetime)
     if child:
         confirm = f"{child.name}，好的，已经把课程改成{new_title}啦"
         await xiaomi_client.tts(device_id, confirm)
+    return True
 
 
 async def scheduler_loop(device_id: str):
@@ -126,8 +128,9 @@ async def _tick(device_id: str):
     window_end = now + timedelta(seconds=30)
 
     with Session(engine) as session:
-        # Voice modify: check for "修改/变更，为XX" command first
-        await _process_voice_modify(device_id, session, now)
+        # NOTE: Voice commands (modify + completion) are now handled exclusively
+        # by voice_poller to avoid two consumers racing on the same
+        # get_latest_conversation dedup cursor. See voice_poller._poll.
 
         # Tasks starting now (±30s window after subtracting advance)
         announce_start_from = window_start + timedelta(minutes=ADVANCE_MINUTES)

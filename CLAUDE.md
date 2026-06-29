@@ -42,8 +42,8 @@ There are **no tests** in this project currently.
 
 Single-process asyncio event loop. FastAPI handles HTTP/WebSocket while two background `asyncio.create_task()` loops run concurrently:
 
-- `scheduler_loop(device_id)` — runs every 60s, handles: (1) task start/end TTS announcements, (2) voice modify commands ("课程修改，为XXX")
-- `voice_poller_loop(device_id)` — runs every 5s, polls Xiaomi conversation history, parses completion utterances via jieba keyword matching
+- `scheduler_loop(device_id)` — runs every 60s, handles task start/end TTS announcements
+- `voice_poller_loop(device_id)` — runs every 5s, polls Xiaomi conversation history, routes voice commands: (1) modify commands ("课程修改，为XXX"), (2) completion utterances ("我做完了XX") via jieba keyword matching
 
 ### Data Model (7 SQLModel tables)
 
@@ -63,8 +63,8 @@ Single-process asyncio event loop. FastAPI handles HTTP/WebSocket while two back
 | `database.py` | SQLModel ORM models, SQLite engine at `{DATA_DIR}/class_schedule.db`, session helpers, config get/set |
 | `config.py` | Fernet symmetric encryption using PBKDF2HMAC-derived key for Xiaomi password |
 | `xiaomi_client.py` | miservice-fork wrapper — login, TTS, conversation polling, device list. Singleton `xiaomi_client` used app-wide |
-| `scheduler.py` | Background loop (60s): sends TTS for starting/ending tasks, processes voice modification commands ("课程修改，为XXX") |
-| `voice_poller.py` | Background loop (5s): polls Xiaomi conversations, matches completion utterances ("我做完了XX"), triggers points engine |
+| `scheduler.py` | Background loop (60s): sends TTS for starting/ending tasks. Exposes `apply_voice_modify()` for voice_poller to call |
+| `voice_poller.py` | Background loop (5s): sole consumer of `get_latest_conversation()`. Routes voice commands — modify ("课程修改，为XXX") → `apply_voice_modify()`, completion ("我做完了XX") → `settle_completion()`. Triggers points engine |
 | `points_engine.py` | Points/XP settlement, level-up logic (5 tiers), badge awarding (streak, keyword-based, perfect day) |
 | `ws_manager.py` | WebSocket broadcast manager for real-time frontend updates on completions |
 | `migrate.py` | One-shot migration script for adding columns to pre-existing databases |
@@ -77,8 +77,8 @@ Single-process asyncio event loop. FastAPI handles HTTP/WebSocket while two back
 
 1. User saves credentials via `/api/config/xiaomi` → encrypted with Fernet, stored in `AppConfig` table
 2. On server start (`lifespan`): `xiaomi_client.load_from_db()` decrypts credentials, logs into MiAccount/MiNAService
-3. `scheduler_loop` sends TTS announcements for task start/end; also listens for "课程修改" voice commands
-4. `voice_poller_loop` polls `get_latest_conversation()` every 5s; matched completion utterances trigger `settle_completion()`
+3. `scheduler_loop` sends TTS announcements for task start/end
+4. `voice_poller_loop` polls `get_latest_conversation()` every 5s; routes voice commands — modify commands → `apply_voice_modify()`, completion utterances → `settle_completion()`. Only voice_poller calls `get_latest_conversation()` to avoid two consumers racing on the shared dedup timestamp
 5. Xiaomi auth token cached at `{DATA_DIR}/.mi.token`; saving new credentials uses `force_reauth=True` to validate against real servers
 
 ### Security
