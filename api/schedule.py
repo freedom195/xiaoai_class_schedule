@@ -6,7 +6,8 @@ from sqlmodel import Session, select
 from pydantic import BaseModel
 import json
 
-from database import ScheduleItem, Completion, get_session
+from database import ScheduleItem, Completion, Child, get_session
+from event_logger import log_event
 
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 
@@ -283,6 +284,8 @@ def create_schedule_item(body: ScheduleItemCreate, session: Session = Depends(ge
     session.add(item)
     session.commit()
     session.refresh(item)
+    child = session.get(Child, item.child_id)
+    log_event("SCHEDULE", f"操作: 创建课程 | 孩子: {child.name if child else '?'} | 课程: {item.title} | {item.start_time.strftime('%m-%d %H:%M')}")
     return _item_to_dict(item, item.start_time.strftime("%Y-%m-%d"), {})
 
 
@@ -318,7 +321,44 @@ def update_schedule_item(item_id: int, body: ScheduleItemUpdate, session: Sessio
     session.add(item)
     session.commit()
     session.refresh(item)
+    child = session.get(Child, item.child_id)
+    log_event("SCHEDULE", f"操作: 更新课程 | 孩子: {child.name if child else '?'} | 课程: {item.title}")
     return _item_to_dict(item, item.start_time.strftime("%Y-%m-%d"), {})
+
+
+def _recurring_appears_in_range(item: ScheduleItem, s_date: date, e_date: date) -> bool:
+    """Check if a recurring item has any active occurrence within [s_date, e_date]."""
+    item_date = item.start_time.date()
+    rt = item.recurrence_type
+    days = item.get_recurrence_days()
+
+    # Check recurrence_end_date cap
+    end_str = getattr(item, "recurrence_end_date", None)
+    if end_str:
+        try:
+            rec_end = datetime.strptime(end_str, "%Y-%m-%d").date()
+            if e_date > rec_end:
+                e_date = rec_end
+        except (ValueError, TypeError):
+            pass
+
+    cur = s_date
+    while cur <= e_date:
+        # Skip if before item start date
+        if cur < item_date:
+            cur += timedelta(days=1)
+            continue
+        # Skip cancelled dates
+        if cur.isoformat() in item.get_cancelled_dates():
+            cur += timedelta(days=1)
+            continue
+        if rt == "daily":
+            return True
+        elif rt == "weekly":
+            if cur.weekday() in days:
+                return True
+        cur += timedelta(days=1)
+    return False
 
 
 class BatchDeleteBody(BaseModel):
@@ -355,19 +395,7 @@ def batch_delete(body: BatchDeleteBody, session: Session = Depends(get_session))
         for item in recurring:
             if item.id in existing_ids:
                 continue
-            rt = item.recurrence_type
-            days = item.get_recurrence_days()
-            appears = False
-            if rt == "daily":
-                appears = item.start_time.date() <= e_date
-            elif rt == "weekly":
-                cur = s_date
-                while cur <= e_date:
-                    if cur.weekday() in days:
-                        appears = True
-                        break
-                    cur += timedelta(days=1)
-            if appears:
+            if _recurring_appears_in_range(item, s_date, e_date):
                 items.append(item)
 
     deleted_one_time = deleted_recurring = 0
@@ -380,6 +408,7 @@ def batch_delete(body: BatchDeleteBody, session: Session = Depends(get_session))
             session.delete(c)
         session.delete(item)
     session.commit()
+    log_event("SCHEDULE", f"操作: 批量清除 | 范围: {body.start_date}~{body.end_date} | 共删除 {deleted_one_time + deleted_recurring} 个课程（{deleted_recurring} 个重复模板）")
     return {"ok": True, "deleted_one_time": deleted_one_time, "deleted_recurring": deleted_recurring, "total": deleted_one_time + deleted_recurring}
 
 
@@ -411,19 +440,26 @@ def delete_schedule_item(
             item.recurrence_end_date = (target - timedelta(days=1)).isoformat()
             session.add(item)
             session.commit()
+            child = session.get(Child, item.child_id)
+            log_event("SCHEDULE", f"操作: 删除后续 | 孩子: {child.name if child else '?'} | 课程: {item.title} | 从 {date} 起")
             return {"ok": True, "forward_cancelled_from": date, "deleted_template": False}
         else:
             # Cancel just this date
             item.cancel_date(date)
             session.add(item)
             session.commit()
+            child = session.get(Child, item.child_id)
+            log_event("SCHEDULE", f"操作: 删除本次 | 孩子: {child.name if child else '?'} | 课程: {item.title} | 日期: {date}")
             return {"ok": True, "cancelled_date": date, "deleted_template": False}
     else:
         # Delete the template entirely
+        child = session.get(Child, item.child_id)
+        title = item.title
         for c in session.exec(select(Completion).where(Completion.schedule_item_id == item_id)).all():
             session.delete(c)
         session.delete(item)
         session.commit()
+        log_event("SCHEDULE", f"操作: 删除课程 | 孩子: {child.name if child else '?'} | 课程: {title}")
         return {"ok": True, "deleted_template": True}
 
 

@@ -3,6 +3,7 @@ from sqlmodel import Session, select
 from pydantic import BaseModel
 from typing import Optional
 from database import Child, ScheduleItem, Completion, PointsTransaction, RedemptionRequest, Badge, get_session
+from event_logger import log_event
 
 router = APIRouter(prefix="/api/children", tags=["children"])
 
@@ -29,6 +30,7 @@ def create_child(body: ChildCreate, session: Session = Depends(get_session)):
     session.add(child)
     session.commit()
     session.refresh(child)
+    log_event("CHILD", f"操作: 添加孩子 | 姓名: {child.name}")
     return child
 
 
@@ -66,6 +68,8 @@ def delete_child(child_id: int, session: Session = Depends(get_session)):
         session.delete(req)
     for badge in session.exec(select(Badge).where(Badge.child_id == child_id)).all():
         session.delete(badge)
+    name = child.name
     session.delete(child)
     session.commit()
+    log_event("CHILD", f"操作: 删除孩子 | 姓名: {name}")
     return {"ok": True}

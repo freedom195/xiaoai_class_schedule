@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from database import init_db, get_session, get_config, set_config
 from config import decrypt
+from event_logger import read_logs, list_log_dates, log_event
 from xiaomi_client import xiaomi_client
 from scheduler import scheduler_loop
 from voice_poller import voice_poller_loop
@@ -102,6 +103,21 @@ async def get_xiaomi_config(session: Session = Depends(get_session)):
     account_enc = get_config(session, "mi_account")
     account = decrypt(account_enc) if account_enc else ""
     return {"account": account, "device_id": get_config(session, "mi_device_id") or ""}
+
+
+# ---------- Event Logs ----------
+
+@app.get("/api/logs/dates")
+async def get_log_dates():
+    """Return list of dates that have log files."""
+    return {"dates": list_log_dates()}
+
+
+@app.get("/api/logs")
+async def get_logs(date: str | None = None):
+    """Return log lines for a given date (default today)."""
+    lines = read_logs(date)
+    return {"date": date, "lines": lines}
 
 
 # ---------- WebSocket ----------

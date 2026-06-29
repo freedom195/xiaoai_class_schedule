@@ -179,6 +179,9 @@
       <span class="icon">🎁</span> 兑换
       <span class="badge" v-if="pendingCount>0">{{pendingCount}}</span>
     </div>
+    <div class="nav-item" :class="{active: page==='logs'}" @click="page='logs'">
+      <span class="icon">📋</span> 日志
+    </div>
     <div class="nav-item" :class="{active: page==='settings'}" @click="page='settings'">
       <span class="icon">⚙️</span> 设置
     </div>
@@ -196,6 +199,7 @@
     <leaderboard-page v-else-if="page==='leaderboard'" :children="children" @reload-children="loadChildren" @toast="showToast"></leaderboard-page>
     <stats-page v-else-if="page==='stats'" :children="children"></stats-page>
     <redemption-page v-else-if="page==='redemption'" :children="children" @pending-count="pendingCount=$event" @toast="showToast"></redemption-page>
+    <logs-page v-else-if="page==='logs'"></logs-page>
     <settings-page v-else-if="page==='settings'" :children="children" @reload-children="loadChildren" @toast="showToast" @xiaomi-status-changed="checkXiaomiStatus"></settings-page>
   </div>
 
@@ -205,6 +209,7 @@
   </div>
 </div>
 
+<script src="/static/components/Logs.js"></script>
 <script src="/static/components/Calendar.js"></script>
 <script src="/static/components/Leaderboard.js"></script>
 <script src="/static/components/Stats.js"></script>

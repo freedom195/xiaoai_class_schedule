@@ -104,7 +104,10 @@ const StatsPage = {
       });
     }
 
-    onMounted(() => setRange(30));
+    onMounted(() => {
+      setRange(30);
+      window.addEventListener('completion-updated', () => load());
+    });
     watch(childId, load);
     watch(() => props.children, () => load(), { deep: true });
 

@@ -13,6 +13,7 @@ from typing import Optional, List, Set
 from sqlmodel import Session, select
 
 from database import Child, ScheduleItem, Completion, engine
+from event_logger import log_event
 from points_engine import settle_completion
 from schedule_utils import get_items_active_in_window
 from xiaomi_client import xiaomi_client
@@ -21,7 +22,7 @@ from ws_manager import ws_manager
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 5  # seconds
-MATCH_WINDOW_MINUTES = 30  # look for tasks within ±30 min of now
+MATCH_WINDOW_MINUTES = 120  # look for tasks within ±2 hours of now
 
 PATTERNS = [
     re.compile(r"我做完了(.+)"),
@@ -142,7 +143,7 @@ async def _poll(device_id: str):
     with Session(engine) as session:
         # Candidate items in the time window (handles recurring items)
         candidates = get_items_active_in_window(
-            session, window_start, window_end + timedelta(hours=1)
+            session, window_start, window_end
         )
 
         # Filter out items already completed today
@@ -175,7 +176,7 @@ async def _poll(device_id: str):
 
         matched = _match_item(hint, active)
         if not matched:
-            logger.debug("No schedule item matched hint=%r", hint)
+            logger.info("No schedule item matched hint=%r among %d active candidates", hint, len(active))
             return
 
         # If multiple children could own this (no named child), complete for all matching
@@ -213,3 +214,6 @@ async def _poll(device_id: str):
                 "Completion settled: child_id=%s item=%s pts=%s",
                 child_id, item.title, item.points_reward,
             )
+
+            child = session.get(Child, child_id)
+            log_event("VOICE", f"孩子: {child.name if child else '?'} | 任务: {item.title} | +{item.points_reward}分 | 语音: {text}")

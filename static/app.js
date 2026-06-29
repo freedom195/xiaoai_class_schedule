@@ -58,6 +58,7 @@ const app = createApp({
           showToast(`🎉 完成「${msg.task_title}」+${msg.points_awarded}分！${badges}`, 'success');
           loadChildren();
           loadRedemptions();
+          window.dispatchEvent(new CustomEvent('completion-updated'));
         }
         if (msg.type === 'new_redemption') {
           pendingCount.value++;
@@ -91,6 +92,7 @@ app.component('calendar-page', CalendarPage);
 app.component('leaderboard-page', LeaderboardPage);
 app.component('stats-page', StatsPage);
 app.component('redemption-page', RedemptionPage);
+app.component('logs-page', LogsPage);
 app.component('settings-page', SettingsPage);
 
 app.mount('#app');

@@ -41,7 +41,6 @@ def _build_start_tts(child_name: str, item: ScheduleItem) -> str:
         child_name + "，现在" + time_str + "，" + item.title + "开始啦！"
         + "记得" + end_str + "之前完成哦" + notes + "。"
         + "完成后说'" + say_done + "'就可以记录啦~"
-        + "如果想修改课程，可以对小爱说：课程修改，为新课程名"
     )
 
 

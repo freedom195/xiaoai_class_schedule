@@ -173,19 +173,50 @@ class XiaomiClient:
             return None
 
     async def test_connection(self, device_id: str) -> dict:
-        """Test connectivity — returns status dict with suggested devices on mismatch."""
+        """Test connectivity — returns status dict with suggested devices on mismatch.
+
+        Beyond listing devices, this also pings the target device with
+        `player_get_status` so an offline / unreachable speaker is reported as
+        failure. Without the live probe, a stale login token + a reachable
+        account API would falsely report the speaker as "online".
+        """
         if not self._mina:
             return {"ok": False, "error": "未登录，请先保存并登录"}
         devices = await self.get_device_list()
         matched = [d for d in devices if d.get("deviceID") == device_id]
-        if matched:
-            return {"ok": True, "device": matched[0]}
-        ids = [{"deviceID": d.get("deviceID", ""), "name": d.get("name", "")} for d in devices]
-        return {
-            "ok": False,
-            "error": f"未找到设备 {device_id}",
-            "suggested_devices": ids,
-        }
+        if not matched:
+            ids = [{"deviceID": d.get("deviceID", ""), "name": d.get("name", "")} for d in devices]
+            return {
+                "ok": False,
+                "error": f"未找到设备 {device_id}",
+                "suggested_devices": ids,
+            }
+        # Live probe: ask the speaker for its playback status. An offline speaker
+        # will time out / return an error; a reachable one returns quickly.
+        try:
+            status = await asyncio.wait_for(
+                self._mina.player_get_status(device_id),
+                timeout=6.0,
+            )
+        except asyncio.TimeoutError:
+            return {
+                "ok": False,
+                "error": "设备无响应（可能已离线或网络不通）",
+                "device": matched[0],
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"设备不可达：{e}",
+                "device": matched[0],
+            }
+        if not status:
+            return {
+                "ok": False,
+                "error": "设备返回为空（可能已离线）",
+                "device": matched[0],
+            }
+        return {"ok": True, "device": matched[0]}
 
     async def close(self):
         if self._session and not self._session.closed:

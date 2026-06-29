@@ -140,8 +140,8 @@ const CalendarPage = {
 
       <!-- Quick options -->
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-        <button class="btn btn-ghost" @click="setQuickRange('today')">今天起</button>
-        <button class="btn btn-ghost" @click="setQuickRange('tomorrow')">明天起</button>
+        <button class="btn btn-ghost" @click="setQuickRange('today')">仅今天</button>
+        <button class="btn btn-ghost" @click="setQuickRange('tomorrow')">仅明天</button>
         <button class="btn btn-ghost" @click="setQuickRange('this_week')">本周剩余</button>
         <button class="btn btn-ghost" @click="setQuickRange('this_month')">本月剩余</button>
       </div>
@@ -233,23 +233,33 @@ const CalendarPage = {
         return;
       }
       cm.loading = true;
-      const res = await fetch('/api/schedule/batch-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          start_date: cm.start_date,
-          end_date: cm.end_date,
-          child_id: cm.child_id || null,
-          include_recurring: true,
-        }),
-      });
-      const data = await res.json();
-      cm.loading = false;
-      cm.open = false;
-      calendar?.refetchEvents();
-      const msg = `已删除 ${data.total} 个课程`
-        + (data.deleted_recurring ? `（含 ${data.deleted_recurring} 个重复模板）` : '');
-      emit('toast', msg, data.total > 0 ? 'warn' : 'success');
+      try {
+        const res = await fetch('/api/schedule/batch-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            start_date: cm.start_date,
+            end_date: cm.end_date,
+            child_id: cm.child_id || null,
+            include_recurring: true,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          emit('toast', err.detail || '删除失败', 'error');
+          return;
+        }
+        const data = await res.json();
+        cm.open = false;
+        calendar?.refetchEvents();
+        emit('reload-children');
+        window.dispatchEvent(new CustomEvent('completion-updated'));
+        const msg = `已删除 ${data.total} 个课程`
+          + (data.deleted_recurring ? `（含 ${data.deleted_recurring} 个重复模板）` : '');
+        emit('toast', msg, data.total > 0 ? 'warn' : 'success');
+      } finally {
+        cm.loading = false;
+      }
     }
 
     function toLocalDT(dt) {
@@ -320,6 +330,13 @@ const CalendarPage = {
         recurrence_type: item.extendedProps.recurrence_type || 'none',
         recurrence_days: [...rd],
         recurrence_end_date: item.extendedProps.recurrence_end_date || '',
+        // Snapshot of original start/end as shown in the modal (instance time, already
+        // adjusted to the displayed date). Used to detect whether the user actually
+        // edited the time. For recurring items, sending the instance time back to the
+        // server would rewrite the template's start_time and cause earlier occurrences
+        // to disappear.
+        _orig_start_time: s,
+        _orig_end_time: e,
       };
     }
 
@@ -377,12 +394,22 @@ const CalendarPage = {
 
       const end_time = addMinutes(m.start_time, m.duration);
 
+      // For recurring items, only send start_time/end_time when the user actually
+      // changed them. Otherwise the modal still holds the instance time (e.g. 2026-07-01
+      // for the Wed occurrence of a daily task that started 2026-06-29), and PUT-ing it
+      // would rewrite the template's start_time and silently drop every earlier
+      // occurrence.
+      const isRecurring = m.recurrence_type !== 'none';
+      const userChangedTime = isRecurring
+        ? (m.start_time !== m._orig_start_time)
+        : true;
+      const newStartTime = userChangedTime ? m.start_time : undefined;
+      const newEndTime   = userChangedTime ? end_time   : undefined;
+
       const body = {
         child_id: m.child_id,
         title: m.title,
         task_type: m.task_type,
-        start_time: m.start_time,
-        end_time: end_time,
         color: m.color,
         points_reward: m.points_reward,
         xp_reward: m.points_reward,
@@ -391,14 +418,21 @@ const CalendarPage = {
         recurrence_type: m.recurrence_type,
         recurrence_days: m.recurrence_type === 'weekly' ? m.recurrence_days : [],
       };
+      if (newStartTime !== undefined) body.start_time = newStartTime;
+      if (newEndTime   !== undefined) body.end_time   = newEndTime;
 
-      // Conflict check (skip if user already confirmed)
+      // Conflict check (skip if user already confirmed).
+      // For recurring items whose time the user did not change, use the original
+      // instance time (it is a valid candidate slot on the day the user clicked).
       if (!force) {
+        const checkBody = { ...body };
+        if (checkBody.start_time === undefined) checkBody.start_time = newStartTime ?? m._orig_start_time;
+        if (checkBody.end_time   === undefined) checkBody.end_time   = newEndTime   ?? m._orig_end_time;
         const params = m.id ? `?exclude_id=${m.id}` : '';
         const chkRes = await fetch('/api/schedule/check-conflict' + params, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify(checkBody),
         });
         const chk = await chkRes.json();
         if (chk.has_conflict) {
@@ -547,6 +581,10 @@ const CalendarPage = {
         },
       });
       calendar.render();
+
+      window.addEventListener('completion-updated', () => {
+        calendar?.refetchEvents();
+      });
     });
 
     watch(selectedChildId, () => calendar?.refetchEvents());

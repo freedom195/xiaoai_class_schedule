@@ -31,3 +31,9 @@ auth.json
 
 # Docker 运行时数据目录
 data/
+
+# 日志
+logs/
+
+# ai工具缓存
+.codebuddy/

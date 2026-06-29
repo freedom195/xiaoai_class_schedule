@@ -8,6 +8,7 @@ from database import (
     Child, Completion, PointsTransaction, RedemptionRequest,
     ScheduleItem, get_session,
 )
+from event_logger import log_event
 from points_engine import settle_completion
 
 router = APIRouter(prefix="/api", tags=["points"])
@@ -33,6 +34,8 @@ async def mark_complete(body: CompletionCreate, session: Session = Depends(get_s
     )
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["error"])
+    child = session.get(Child, body.child_id)
+    log_event("COMPLETION", f"孩子: {child.name if child else '?'} | 任务: {item.title} | +{item.points_reward}分 | 手动完成")
     return result
 
 
@@ -139,6 +142,7 @@ def review_redemption(req_id: int, body: RedemptionReview, session: Session = De
             reason=f"兑换：{req.reward_name}",
         )
         session.add(txn)
+        log_event("REDEMPTION", f"孩子: {child.name if child else '?'} | 兑换: {req.reward_name} | -{req.points_cost}分 | 已批准")
 
     session.add(req)
     session.commit()

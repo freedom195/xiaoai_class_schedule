@@ -1,12 +1,43 @@
 from __future__ import annotations
-from datetime import datetime, timedelta
-from typing import Optional, Dict
+from datetime import datetime, timedelta, date
+from typing import Optional, Dict, List
 from fastapi import APIRouter, Depends
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select
 
 from database import Child, ScheduleItem, Completion, get_session
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
+
+
+def _item_active_on_date(item: ScheduleItem, target: date) -> bool:
+    """Check if a recurring item is active on target_date."""
+    item_date = item.start_time.date()
+    rt = item.recurrence_type
+    if rt == "none":
+        return item_date == target
+    if item_date > target:
+        return False
+    if rt == "daily":
+        pass
+    elif rt == "weekly":
+        days = item.get_recurrence_days()
+        if target.weekday() not in days:
+            return False
+    else:
+        return False
+    # Check recurrence_end_date
+    end_str = getattr(item, "recurrence_end_date", None)
+    if end_str:
+        try:
+            end_date = datetime.strptime(end_str, "%Y-%m-%d").date()
+            if target > end_date:
+                return False
+        except (ValueError, TypeError):
+            pass
+    # Check cancelled dates
+    if target.isoformat() in item.get_cancelled_dates():
+        return False
+    return True
 
 
 @router.get("")
@@ -19,6 +50,8 @@ def get_stats(
     # Default: last 30 days
     end_dt = datetime.fromisoformat(end).replace(hour=23, minute=59, second=59) if end else datetime.now().replace(hour=23, minute=59, second=59)
     start_dt = datetime.fromisoformat(start) if start else end_dt - timedelta(days=30)
+    start_date = start_dt.date()
+    end_date = end_dt.date()
 
     children_q = select(Child)
     if child_id:
@@ -27,46 +60,57 @@ def get_stats(
 
     results = []
     for child in children:
-        # All scheduled items in range
-        scheduled = session.exec(
-            select(ScheduleItem).where(
-                ScheduleItem.child_id == child.id,
-                ScheduleItem.start_time >= start_dt,
-                ScheduleItem.start_time <= end_dt,
-            )
+        # Get all items for this child
+        all_items = session.exec(
+            select(ScheduleItem).where(ScheduleItem.child_id == child.id)
         ).all()
-        scheduled_ids = [s.id for s in scheduled]
 
-        completions = []
-        if scheduled_ids:
-            completions = session.exec(
-                select(Completion).where(Completion.schedule_item_id.in_(scheduled_ids))
-            ).all()
+        # Get all completions for this child
+        all_completions = session.exec(
+            select(Completion).where(Completion.child_id == child.id)
+        ).all()
+        # Map: item_id -> set of completion_date strings
+        comp_dates: Dict[int, set] = {}
+        for c in all_completions:
+            comp_dates.setdefault(c.schedule_item_id, set()).add(c.completion_date)
 
-        # Daily breakdown
+        # Daily breakdown + totals
         daily: Dict[str, Dict] = {}
-        for item in scheduled:
-            day_key = item.start_time.strftime("%Y-%m-%d")
-            if day_key not in daily:
-                daily[day_key] = {"scheduled": 0, "completed": 0}
-            daily[day_key]["scheduled"] += 1
+        total_scheduled = 0
+        total_completed = 0
+        total_points = 0
 
-        completed_item_ids = {c.schedule_item_id for c in completions}
-        for item in scheduled:
-            if item.id in completed_item_ids:
-                day_key = item.start_time.strftime("%Y-%m-%d")
-                daily[day_key]["completed"] += 1
+        cur = start_date
+        while cur <= end_date:
+            day_key = cur.isoformat()
+            daily[day_key] = {"scheduled": 0, "completed": 0}
 
-        # Longest streak
+            for item in all_items:
+                if not _item_active_on_date(item, cur):
+                    continue
+                total_scheduled += 1
+                daily[day_key]["scheduled"] += 1
+
+                if day_key in comp_dates.get(item.id, set()):
+                    total_completed += 1
+                    daily[day_key]["completed"] += 1
+                    # Find the actual completion to get points
+                    for c in all_completions:
+                        if c.schedule_item_id == item.id and c.completion_date == day_key:
+                            total_points += c.points_awarded
+                            break
+
+            cur += timedelta(days=1)
+
         streak = _calc_streak(daily)
 
         results.append({
             "child_id": child.id,
             "child_name": child.name,
             "avatar_emoji": child.avatar_emoji,
-            "total_scheduled": len(scheduled),
-            "total_completed": len(completions),
-            "total_points_earned": sum(c.points_awarded for c in completions),
+            "total_scheduled": total_scheduled,
+            "total_completed": total_completed,
+            "total_points_earned": total_points,
             "longest_streak": streak,
             "daily": [
                 {"date": k, **v, "rate": v["completed"] / v["scheduled"] if v["scheduled"] else 0}
