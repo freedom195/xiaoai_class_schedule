@@ -101,6 +101,7 @@ const RedemptionPage = {
         body: JSON.stringify({ status }),
       });
       emit('toast', status === 'approved' ? '已通过申请' : '已拒绝申请', status === 'approved' ? 'success' : 'warn');
+      if (status === 'approved') emit('reload-children');
       load();
     }
 

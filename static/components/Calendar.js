@@ -322,7 +322,7 @@ const CalendarPage = {
         open: true, id: item.extendedProps.item_id,
         child_id: item.extendedProps.child_id,
         task_type: item.extendedProps.task_type || 'study',
-        title: item.title.replace(/ ↻$/, '').replace(/ ✏️$/, ''),
+        title: item.title.replace(/ ✓$/, '').replace(/ ↻$/, '').replace(/ ✏️$/, ''),
         start_time: s,
         duration: getDurationMinutes(s, e),
         for_date: item.extendedProps.completion_date || '',
