@@ -2,7 +2,7 @@ fastapi==0.111.0
 uvicorn[standard]==0.29.0
 sqlmodel==0.0.19
 apscheduler==3.10.4
-miservice-fork==2.3.4
+miservice-fork>=2.9.3
 jieba==0.42.1
 cryptography==42.0.8
 websockets==12.0

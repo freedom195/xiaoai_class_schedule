@@ -68,19 +68,53 @@ class XiaomiConfig(BaseModel):
     device_id: str
 
 
+class XiaomiCookieConfig(BaseModel):
+    pass_token: str
+    user_id: str
+    device_id: str
+
+
 @app.post("/api/config/xiaomi")
 async def save_xiaomi_config(body: XiaomiConfig, session: Session = Depends(get_session)):
+    if not body.account.strip():
+        return {"ok": False, "error": "请填写小米账号"}
+    if not body.password:
+        return {"ok": False, "error": "请填写密码（密码框不会预填，需手动输入）"}
+    if not body.device_id.strip():
+        return {"ok": False, "error": "请填写设备ID"}
     await xiaomi_client.save_to_db(session, body.account, body.password)
     set_config(session, "mi_device_id", body.device_id)
-    # force_reauth=True: clear cached token so the password is actually validated
-    # against Xiaomi servers, preventing a stale token from making a wrong password
-    # appear successful.
-    ok = await xiaomi_client.login(body.account, body.password, force_reauth=True)
+    ok = await xiaomi_client.login(body.account, body.password)
     if ok:
-        # Restart background tasks with new config
         asyncio.create_task(scheduler_loop(body.device_id))
         asyncio.create_task(voice_poller_loop(body.device_id))
-    return {"ok": ok}
+    result = {"ok": ok}
+    if not ok:
+        result["error"] = xiaomi_client.last_error
+        if xiaomi_client.verify_url:
+            result["verify_url"] = xiaomi_client.verify_url
+    return result
+
+
+@app.post("/api/config/xiaomi/cookie")
+async def save_xiaomi_cookie(body: XiaomiCookieConfig, session: Session = Depends(get_session)):
+    """Login using passToken + userId from browser cookies (bypasses notificationUrl)."""
+    if not body.pass_token.strip():
+        return {"ok": False, "error": "请填写 passToken"}
+    if not body.user_id.strip():
+        return {"ok": False, "error": "请填写 userId"}
+    if not body.device_id.strip():
+        return {"ok": False, "error": "请填写设备ID"}
+    await xiaomi_client.save_cookies_to_db(session, body.pass_token, body.user_id)
+    set_config(session, "mi_device_id", body.device_id)
+    ok = await xiaomi_client.login_with_cookies(body.pass_token, body.user_id)
+    if ok:
+        asyncio.create_task(scheduler_loop(body.device_id))
+        asyncio.create_task(voice_poller_loop(body.device_id))
+    result = {"ok": ok}
+    if not ok:
+        result["error"] = xiaomi_client.last_error
+    return result
 
 
 @app.post("/api/config/xiaomi/test")
@@ -95,17 +129,30 @@ async def xiaomi_status(session: Session = Depends(get_session)):
     """Return whether Xiaomi is configured and connected."""
     device_id = get_config(session, "mi_device_id") or ""
     account = get_config(session, "mi_account") or ""
-    configured = bool(device_id and account)
+    has_cookie = bool(get_config(session, "mi_pass_token"))
+    configured = bool(device_id and (account or has_cookie))
     logged_in = xiaomi_client._mina is not None
-    return {"configured": configured, "connected": logged_in, "account": account, "device_id": device_id}
+    return {
+        "configured": configured,
+        "connected": logged_in,
+        "account": account,
+        "device_id": device_id,
+        "has_cookie": has_cookie,
+    }
 
 
 @app.get("/api/config/xiaomi")
 async def get_xiaomi_config(session: Session = Depends(get_session)):
-    """Return saved Xiaomi config for form pre-fill (password omitted for security)."""
+    """Return saved Xiaomi config for form pre-fill (sensitive fields omitted)."""
     account_enc = get_config(session, "mi_account")
     account = decrypt(account_enc) if account_enc else ""
-    return {"account": account, "device_id": get_config(session, "mi_device_id") or ""}
+    user_id = get_config(session, "mi_user_id") or ""
+    return {
+        "account": account,
+        "device_id": get_config(session, "mi_device_id") or "",
+        "has_cookie": bool(get_config(session, "mi_pass_token")),
+        "cookie_user_id": user_id,
+    }
 
 
 # ---------- Event Logs ----------

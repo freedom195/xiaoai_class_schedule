@@ -12,6 +12,7 @@ __pycache__/
 # 小米认证文件（含账号信息，不入库）
 auth.json
 .mi.token
+.mi_device_id
 
 # 环境变量
 .env
@@ -37,3 +38,4 @@ logs/
 
 # ai工具缓存
 .codebuddy/
+.mi.auth
