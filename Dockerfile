@@ -27,9 +27,9 @@ COPY static/ ./static/
 ENV DATA_DIR=/app/data
 RUN mkdir -p /app/data
 
-EXPOSE 8080
+EXPOSE 8011
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/config/xiaomi/status', timeout=3)" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8011/api/config/xiaomi/status', timeout=3)" || exit 1
 
 CMD ["python", "main.py"]

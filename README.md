@@ -49,13 +49,13 @@ python main.py
 ```
 ============================================
   暑假课表系统已启动
-  本机访问：  http://localhost:8080
-  局域网访问：http://192.168.x.x:8080
+  本机访问：  http://localhost:8011
+  局域网访问：http://192.168.x.x:8011
   按 Ctrl+C 停止服务
 ============================================
 ```
 
-在浏览器打开 `http://localhost:8080` 即可使用。手机与电脑在同一 WiFi 下，也可用局域网地址访问。
+在浏览器打开 `http://localhost:8011` 即可使用。手机与电脑在同一 WiFi 下，也可用局域网地址访问。
 
 ---
 
@@ -179,10 +179,10 @@ asyncio.run(main())
 
 ## 常见问题
 
-**Q：端口 8080 已被占用？**
+**Q：端口 8011 已被占用？**
 
 ```powershell
-Get-NetTCPConnection -LocalPort 8080 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+Get-NetTCPConnection -LocalPort 8011 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 然后重新运行 `python main.py`。
 
@@ -204,7 +204,7 @@ Get-NetTCPConnection -LocalPort 8080 | ForEach-Object { Stop-Process -Id $_.Owni
 
 **Q：手机能访问吗？**
 
-可以。启动后终端会显示局域网地址（如 `http://192.168.1.100:8080`），手机连同一 WiFi 后用浏览器打开即可。
+可以。启动后终端会显示局域网地址（如 `http://192.168.1.100:8011`），手机连同一 WiFi 后用浏览器打开即可。
 
 ---
 
@@ -259,7 +259,7 @@ docker compose logs -f
 docker compose down
 ```
 
-启动后访问 **http://localhost:8080**。
+启动后访问 **http://localhost:8011**。
 
 ### 数据持久化
 
@@ -275,11 +275,11 @@ data/
 
 ### 修改端口
 
-编辑 `docker-compose.yml`，将 `"8080:8080"` 改为 `"你的端口:8080"`：
+编辑 `docker-compose.yml`，将 `"8011:8011"` 改为 `"你的端口:8011"`：
 
 ```yaml
 ports:
-  - "9090:8080"   # 改为 9090
+  - "9090:8011"   # 改为 9090
 ```
 
 ### 设置加密密钥（可选但推荐）
@@ -303,7 +303,7 @@ docker build -t xiaoai-schedule .
 # 运行
 docker run -d \
   --name xiaoai-schedule \
-  -p 8080:8080 \
+  -p 8011:8011 \
   -v $(pwd)/data:/app/data \
   -e DATA_DIR=/app/data \
   --restart unless-stopped \

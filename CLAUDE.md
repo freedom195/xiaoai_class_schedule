@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the server (listens on 0.0.0.0:8080)
+# Start the server (listens on 0.0.0.0:8011)
 python main.py
 
 # Enable hot reload during development: change reload=False to reload=True in main.py line ~145

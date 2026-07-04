@@ -184,8 +184,8 @@ if __name__ == "__main__":
         local_ip = "127.0.0.1"
     print(f"\n{'='*44}")
     print(f"  暑假课表系统已启动")
-    print(f"  本机访问：  http://localhost:8080")
-    print(f"  局域网访问：http://{local_ip}:8080")
+    print(f"  本机访问：  http://localhost:8011")
+    print(f"  局域网访问：http://{local_ip}:8011")
     print(f"  按 Ctrl+C 停止服务")
     print(f"{'='*44}\n")
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=False, log_level="warning")
+    uvicorn.run("main:app", host="0.0.0.0", port=8011, reload=False, log_level="warning")
